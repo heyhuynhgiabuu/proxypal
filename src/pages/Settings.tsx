@@ -1,8 +1,29 @@
+import { createSignal } from "solid-js";
 import { Button, Switch } from "../components/ui";
 import { appStore } from "../stores/app";
+import { saveConfig } from "../lib/tauri";
 
 export function SettingsPage() {
   const { config, setConfig, setCurrentPage } = appStore;
+  const [saving, setSaving] = createSignal(false);
+
+  const handleConfigChange = async (
+    key: keyof ReturnType<typeof config>,
+    value: boolean | number,
+  ) => {
+    const newConfig = { ...config(), [key]: value };
+    setConfig(newConfig);
+
+    // Auto-save config
+    setSaving(true);
+    try {
+      await saveConfig(newConfig);
+    } catch (error) {
+      console.error("Failed to save config:", error);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div class="min-h-screen flex flex-col">
@@ -31,6 +52,9 @@ export function SettingsPage() {
           <h1 class="font-bold text-lg text-gray-900 dark:text-gray-100">
             Settings
           </h1>
+          {saving() && (
+            <span class="text-xs text-gray-400 ml-2">Saving...</span>
+          )}
         </div>
       </header>
 
@@ -49,7 +73,7 @@ export function SettingsPage() {
                 description="Start ProxyPal automatically when you log in"
                 checked={config().launchAtLogin}
                 onChange={(checked) =>
-                  setConfig((prev) => ({ ...prev, launchAtLogin: checked }))
+                  handleConfigChange("launchAtLogin", checked)
                 }
               />
 
@@ -59,9 +83,7 @@ export function SettingsPage() {
                 label="Auto-start proxy"
                 description="Start the proxy server when ProxyPal launches"
                 checked={config().autoStart}
-                onChange={(checked) =>
-                  setConfig((prev) => ({ ...prev, autoStart: checked }))
-                }
+                onChange={(checked) => handleConfigChange("autoStart", checked)}
               />
             </div>
           </div>
@@ -81,10 +103,10 @@ export function SettingsPage() {
                   type="number"
                   value={config().port}
                   onInput={(e) =>
-                    setConfig((prev) => ({
-                      ...prev,
-                      port: parseInt(e.currentTarget.value) || 8080,
-                    }))
+                    handleConfigChange(
+                      "port",
+                      parseInt(e.currentTarget.value) || 8080,
+                    )
                   }
                   class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                   min="1024"

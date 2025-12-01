@@ -5,7 +5,8 @@ import type { Provider } from "../lib/tauri";
 interface ProviderCardProps {
   name: string;
   provider: Provider;
-  icon: string;
+  icon?: string;
+  logo?: string;
   connected: boolean;
   description: string;
   onConnect: (provider: Provider) => Promise<void>;
@@ -42,8 +43,12 @@ export function ProviderCard(props: ProviderCardProps) {
       )}
 
       {/* Icon */}
-      <div class="w-12 h-12 mb-3 flex items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800">
-        <span class="text-2xl">{props.icon}</span>
+      <div class="w-12 h-12 mb-3 flex items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800 overflow-hidden">
+        {props.logo ? (
+          <img src={props.logo} alt={props.name} class="w-10 h-10 rounded" />
+        ) : (
+          <span class="text-2xl">{props.icon}</span>
+        )}
       </div>
 
       {/* Content */}

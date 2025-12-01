@@ -1,5 +1,6 @@
 import { Button as KobalteButton } from "@kobalte/core/button";
-import { JSX, splitProps } from "solid-js";
+import type { JSX } from "solid-js";
+import { splitProps } from "solid-js";
 
 interface ButtonProps extends JSX.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: "primary" | "secondary" | "ghost" | "danger";
@@ -40,7 +41,7 @@ export function Button(props: ButtonProps) {
   };
 
   return (
-    <KobalteButton.Root
+    <KobalteButton
       class={`${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]} ${local.class ?? ""}`}
       disabled={local.disabled || local.loading}
       {...others}
@@ -68,6 +69,6 @@ export function Button(props: ButtonProps) {
         </svg>
       )}
       {local.children}
-    </KobalteButton.Root>
+    </KobalteButton>
   );
 }

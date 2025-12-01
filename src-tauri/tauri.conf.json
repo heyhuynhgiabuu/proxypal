@@ -18,7 +18,8 @@
         "resizable": true,
         "fullscreen": false,
         "center": true,
-        "decorations": true
+        "decorations": true,
+        "visible": true
       }
     ],
     "security": {
@@ -26,6 +27,7 @@
     }
   },
   "bundle": {
+    "externalBin": ["binaries/cliproxyapi"],
     "active": true,
     "targets": "all",
     "icon": [
@@ -40,6 +42,13 @@
     "longDescription": "ProxyPal lets you use your existing Claude, ChatGPT, Gemini, and Qwen subscriptions with any AI coding tool. No separate API keys needed.",
     "macOS": {
       "minimumSystemVersion": "10.15"
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["proxypal"]
+      }
     }
   }
 }

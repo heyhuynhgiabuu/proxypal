@@ -1,0 +1,14 @@
+<svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Continue.dev logo - red/orange themed -->
+  <rect width="48" height="48" rx="10" fill="#1A1A2E"/>
+  <defs>
+    <linearGradient id="continue-grad" x1="10" y1="10" x2="38" y2="38" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F97316"/>
+      <stop offset="100%" stop-color="#EF4444"/>
+    </linearGradient>
+  </defs>
+  <!-- Stylized "C" shape with forward arrow representing Continue -->
+  <path d="M24 10C16.268 10 10 16.268 10 24C10 31.732 16.268 38 24 38C28.418 38 32.418 36.209 35.314 33.314" stroke="url(#continue-grad)" stroke-width="4" stroke-linecap="round" fill="none"/>
+  <!-- Play/forward arrow -->
+  <path d="M28 18L38 24L28 30V18Z" fill="url(#continue-grad)"/>
+</svg>

@@ -1,31 +1,31 @@
 import { Button } from "../components/ui";
 import { ProviderCard } from "../components/ProviderCard";
 import { appStore } from "../stores/app";
-import type { Provider } from "../lib/tauri";
+import { openOAuth, type Provider } from "../lib/tauri";
 
 const providers = [
   {
     name: "Claude",
     provider: "claude" as Provider,
-    icon: "🟠",
+    logo: "/logos/claude.svg",
     description: "Anthropic's Claude models via Claude Code subscription",
   },
   {
     name: "ChatGPT",
     provider: "openai" as Provider,
-    icon: "🟢",
+    logo: "/logos/openai.svg",
     description: "OpenAI's GPT models via ChatGPT Plus/Pro subscription",
   },
   {
     name: "Gemini",
     provider: "gemini" as Provider,
-    icon: "🔵",
+    logo: "/logos/gemini.svg",
     description: "Google's Gemini models via Gemini CLI",
   },
   {
     name: "Qwen",
     provider: "qwen" as Provider,
-    icon: "🟣",
+    logo: "/logos/qwen.png",
     description: "Alibaba's Qwen models via Qwen Code",
   },
 ];
@@ -34,8 +34,11 @@ export function WelcomePage() {
   const { authStatus, setCurrentPage } = appStore;
 
   const handleConnect = async (provider: Provider) => {
-    // TODO: Implement OAuth flow via Tauri
-    console.log("Connecting to", provider);
+    try {
+      await openOAuth(provider);
+    } catch (error) {
+      console.error("Failed to start OAuth:", error);
+    }
   };
 
   const hasAnyConnection = () => {
@@ -84,7 +87,7 @@ export function WelcomePage() {
               <ProviderCard
                 name={provider.name}
                 provider={provider.provider}
-                icon={provider.icon}
+                logo={provider.logo}
                 description={provider.description}
                 connected={authStatus()[provider.provider]}
                 onConnect={handleConnect}

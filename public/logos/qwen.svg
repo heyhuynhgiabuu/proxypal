@@ -1,0 +1,14 @@
+<svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Qwen official logo - colorful gradient sphere -->
+  <rect width="48" height="48" rx="10" fill="#1A1A2E"/>
+  <defs>
+    <radialGradient id="qwen-sphere" cx="0.3" cy="0.3" r="0.7" fx="0.3" fy="0.3">
+      <stop offset="0%" stop-color="#60A5FA"/>
+      <stop offset="30%" stop-color="#A78BFA"/>
+      <stop offset="60%" stop-color="#F472B6"/>
+      <stop offset="100%" stop-color="#FB923C"/>
+    </radialGradient>
+  </defs>
+  <!-- Gradient sphere representing Qwen's brand -->
+  <circle cx="24" cy="24" r="13" fill="url(#qwen-sphere)"/>
+</svg>

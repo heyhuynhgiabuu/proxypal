@@ -1,5 +1,5 @@
 import { Switch as KobalteSwitch } from "@kobalte/core/switch";
-import { JSX, splitProps } from "solid-js";
+import { splitProps } from "solid-js";
 
 interface SwitchProps {
   checked?: boolean;
@@ -10,7 +10,7 @@ interface SwitchProps {
 }
 
 export function Switch(props: SwitchProps) {
-  const [local, others] = splitProps(props, [
+  const [local] = splitProps(props, [
     "checked",
     "onChange",
     "disabled",
@@ -19,7 +19,7 @@ export function Switch(props: SwitchProps) {
   ]);
 
   return (
-    <KobalteSwitch.Root
+    <KobalteSwitch
       class="flex items-center justify-between"
       checked={local.checked}
       onChange={local.onChange}
@@ -41,6 +41,6 @@ export function Switch(props: SwitchProps) {
       <KobalteSwitch.Control class="w-11 h-6 bg-gray-200 dark:bg-gray-700 rounded-full relative transition-colors data-[checked]:bg-brand-600 cursor-pointer">
         <KobalteSwitch.Thumb class="block w-5 h-5 bg-white rounded-full shadow-md transform transition-transform translate-x-0.5 data-[checked]:translate-x-[22px] mt-0.5" />
       </KobalteSwitch.Control>
-    </KobalteSwitch.Root>
+    </KobalteSwitch>
   );
 }
