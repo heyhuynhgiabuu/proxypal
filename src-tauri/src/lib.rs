@@ -1273,6 +1273,67 @@ async fn test_agent_connection(state: State<'_, AppState>, agent_id: String) -> 
     }
 }
 
+// Get available models from CLIProxyAPI /v1/models endpoint
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AvailableModel {
+    pub id: String,
+    pub owned_by: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModelsApiResponse {
+    data: Vec<ModelsApiModel>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModelsApiModel {
+    id: String,
+    owned_by: String,
+}
+
+#[tauri::command]
+async fn get_available_models(state: State<'_, AppState>) -> Result<Vec<AvailableModel>, String> {
+    let config = state.config.lock().unwrap().clone();
+    let proxy_running = state.proxy_status.lock().unwrap().running;
+    
+    if !proxy_running {
+        return Ok(vec![]);
+    }
+    
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| e.to_string())?;
+    
+    let endpoint = format!("http://localhost:{}/v1/models", config.port);
+    
+    let response = client.get(&endpoint)
+        .header("Authorization", "Bearer proxypal-local")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch models: {}", e))?;
+    
+    if !response.status().is_success() {
+        return Err(format!("API returned status {}", response.status()));
+    }
+    
+    let api_response: ModelsApiResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse models response: {}", e))?;
+    
+    let models: Vec<AvailableModel> = api_response.data
+        .into_iter()
+        .map(|m| AvailableModel {
+            id: m.id,
+            owned_by: m.owned_by,
+        })
+        .collect();
+    
+    Ok(models)
+}
+
 // Handle deep link OAuth callback
 fn handle_deep_link(app: &tauri::AppHandle, urls: Vec<url::Url>) {
     for url in urls {
@@ -1545,9 +1606,66 @@ fn check_env_configured(var: &str, expected_prefix: &str) -> bool {
         .unwrap_or(false)
 }
 
+// Get model context/output limits based on model ID and provider
+fn get_model_limits(model_id: &str, owned_by: &str) -> (u64, u64) {
+    // Return (context_limit, output_limit)
+    match owned_by {
+        "anthropic" => {
+            if model_id.contains("opus") {
+                (200000, 16384)
+            } else if model_id.contains("haiku") {
+                (200000, 8192)
+            } else {
+                (200000, 16384) // sonnet default
+            }
+        }
+        "google" => {
+            // Gemini models have huge context
+            (1000000, 65536)
+        }
+        "openai" => {
+            if model_id.contains("o3") || model_id.contains("o1") {
+                (200000, 100000)
+            } else {
+                (128000, 32768)
+            }
+        }
+        "qwen" => (131072, 16384),
+        "deepseek" => (64000, 8192),
+        _ => (128000, 16384) // safe defaults
+    }
+}
+
+// Get display name for a model
+fn get_model_display_name(model_id: &str, owned_by: &str) -> String {
+    // Convert model ID to human-readable name
+    let base_name = model_id
+        .replace("-", " ")
+        .replace(".", " ")
+        .split_whitespace()
+        .map(|word| {
+            let mut chars: Vec<char> = word.chars().collect();
+            if !chars.is_empty() {
+                chars[0] = chars[0].to_uppercase().next().unwrap_or(chars[0]);
+            }
+            chars.into_iter().collect::<String>()
+        })
+        .collect::<Vec<String>>()
+        .join(" ");
+    
+    // Add provider prefix for clarity
+    match owned_by {
+        "anthropic" => format!("{}", base_name),
+        "google" => format!("{}", base_name),
+        "openai" => format!("{}", base_name),
+        "qwen" => format!("{}", base_name),
+        _ => base_name
+    }
+}
+
 // Configure a CLI agent with ProxyPal
 #[tauri::command]
-fn configure_cli_agent(state: State<AppState>, agent_id: String) -> Result<serde_json::Value, String> {
+fn configure_cli_agent(state: State<AppState>, agent_id: String, models: Vec<AvailableModel>) -> Result<serde_json::Value, String> {
     let config = state.config.lock().unwrap();
     let port = config.port;
     let endpoint = format!("http://127.0.0.1:{}", port);
@@ -1637,92 +1755,33 @@ export CODE_ASSIST_ENDPOINT="{}"
             let factory_dir = home.join(".factory");
             std::fs::create_dir_all(&factory_dir).map_err(|e| e.to_string())?;
             
-            // Write config.json with all CLIProxyAPI-supported models
-            // See: https://help.router-for.me/agent-client/droid.html
-            let config_content = format!(r#"{{
-  "custom_models": [
-    {{
-      "model": "claude-sonnet-4-5-20250929",
-      "base_url": "{}",
-      "api_key": "proxypal-local",
-      "provider": "anthropic"
-    }},
-    {{
-      "model": "claude-opus-4-1-20250805",
-      "base_url": "{}",
-      "api_key": "proxypal-local",
-      "provider": "anthropic"
-    }},
-    {{
-      "model": "claude-3-5-haiku-20241022",
-      "base_url": "{}",
-      "api_key": "proxypal-local",
-      "provider": "anthropic"
-    }},
-    {{
-      "model": "gpt-5",
-      "base_url": "{}/v1",
-      "api_key": "proxypal-local",
-      "provider": "openai"
-    }},
-    {{
-      "model": "gpt-5-codex",
-      "base_url": "{}/v1",
-      "api_key": "proxypal-local",
-      "provider": "openai"
-    }},
-    {{
-      "model": "o3",
-      "base_url": "{}/v1",
-      "api_key": "proxypal-local",
-      "provider": "openai"
-    }},
-    {{
-      "model": "gemini-2.5-pro",
-      "base_url": "{}/v1",
-      "api_key": "proxypal-local",
-      "provider": "openai"
-    }},
-    {{
-      "model": "gemini-2.5-flash",
-      "base_url": "{}/v1",
-      "api_key": "proxypal-local",
-      "provider": "openai"
-    }},
-    {{
-      "model": "qwen3-coder-plus",
-      "base_url": "{}/v1",
-      "api_key": "proxypal-local",
-      "provider": "openai"
-    }},
-    {{
-      "model": "qwen-coder-plus",
-      "base_url": "{}/v1",
-      "api_key": "proxypal-local",
-      "provider": "openai"
-    }},
-    {{
-      "model": "deepseek-r1",
-      "base_url": "{}/v1",
-      "api_key": "proxypal-local",
-      "provider": "openai"
-    }},
-    {{
-      "model": "deepseek-v3",
-      "base_url": "{}/v1",
-      "api_key": "proxypal-local",
-      "provider": "openai"
-    }}
-  ]
-}}"#, endpoint, endpoint, endpoint, endpoint, endpoint, endpoint, endpoint, endpoint, endpoint, endpoint, endpoint, endpoint);
+            // Build dynamic custom_models array from available models
+            let custom_models: Vec<serde_json::Value> = models.iter().map(|m| {
+                let (base_url, provider) = match m.owned_by.as_str() {
+                    "anthropic" => (endpoint.clone(), "anthropic"),
+                    _ => (format!("{}/v1", endpoint), "openai"),
+                };
+                serde_json::json!({
+                    "model": m.id,
+                    "base_url": base_url,
+                    "api_key": "proxypal-local",
+                    "provider": provider
+                })
+            }).collect();
+            
+            let config_json = serde_json::json!({
+                "custom_models": custom_models
+            });
             
             let config_path = factory_dir.join("config.json");
-            std::fs::write(&config_path, &config_content).map_err(|e| e.to_string())?;
+            let config_str = serde_json::to_string_pretty(&config_json).map_err(|e| e.to_string())?;
+            std::fs::write(&config_path, &config_str).map_err(|e| e.to_string())?;
             
             Ok(serde_json::json!({
                 "success": true,
                 "configType": "file",
                 "configPath": config_path.to_string_lossy(),
+                "modelsConfigured": models.len(),
                 "instructions": "Factory Droid has been configured. Run 'droid' or 'factory' to start using it."
             }))
         },
@@ -1761,8 +1820,19 @@ export AMP_URL="{}"
             std::fs::create_dir_all(&config_dir).map_err(|e| e.to_string())?;
             let config_path = config_dir.join("opencode.json");
             
+            // Build dynamic models object from available models
+            // OpenCode needs model configs with name and limits
+            let mut models_obj = serde_json::Map::new();
+            for m in &models {
+                let (context_limit, output_limit) = get_model_limits(&m.id, &m.owned_by);
+                let display_name = get_model_display_name(&m.id, &m.owned_by);
+                models_obj.insert(m.id.clone(), serde_json::json!({
+                    "name": display_name,
+                    "limit": { "context": context_limit, "output": output_limit }
+                }));
+            }
+            
             // Create or update opencode.json with proxypal provider
-            // Use CLIProxyAPI-compatible model names
             let opencode_config = serde_json::json!({
                 "$schema": "https://opencode.ai/config.json",
                 "provider": {
@@ -1773,57 +1843,7 @@ export AMP_URL="{}"
                             "baseURL": endpoint_v1,
                             "apiKey": "proxypal-local"
                         },
-                        "models": {
-                            // Claude models (via CLIProxyAPI)
-                            "claude-sonnet-4-5-20250929": {
-                                "name": "Claude Sonnet 4.5",
-                                "limit": { "context": 200000, "output": 16384 }
-                            },
-                            "claude-opus-4-1-20250805": {
-                                "name": "Claude Opus 4.1",
-                                "limit": { "context": 200000, "output": 16384 }
-                            },
-                            "claude-3-5-haiku-20241022": {
-                                "name": "Claude 3.5 Haiku",
-                                "limit": { "context": 200000, "output": 8192 }
-                            },
-                            // GPT models (via CLIProxyAPI)
-                            "gpt-5": {
-                                "name": "GPT-5",
-                                "limit": { "context": 128000, "output": 32768 }
-                            },
-                            "gpt-5-codex": {
-                                "name": "GPT-5 Codex",
-                                "limit": { "context": 128000, "output": 32768 }
-                            },
-                            "o3": {
-                                "name": "OpenAI o3",
-                                "limit": { "context": 200000, "output": 100000 }
-                            },
-                            // Gemini models (via CLIProxyAPI)
-                            "gemini-2.5-pro": {
-                                "name": "Gemini 2.5 Pro",
-                                "limit": { "context": 1000000, "output": 65536 }
-                            },
-                            "gemini-2.5-flash": {
-                                "name": "Gemini 2.5 Flash",
-                                "limit": { "context": 1000000, "output": 65536 }
-                            },
-                            // Qwen models (via CLIProxyAPI)
-                            "qwen3-coder-plus": {
-                                "name": "Qwen3 Coder Plus",
-                                "limit": { "context": 131072, "output": 16384 }
-                            },
-                            // DeepSeek models (via CLIProxyAPI)
-                            "deepseek-r1": {
-                                "name": "DeepSeek R1",
-                                "limit": { "context": 64000, "output": 8192 }
-                            },
-                            "deepseek-v3": {
-                                "name": "DeepSeek V3",
-                                "limit": { "context": 64000, "output": 8192 }
-                            }
-                        }
+                        "models": models_obj
                     }
                 }
             });
@@ -1858,7 +1878,8 @@ export AMP_URL="{}"
                 "success": true,
                 "configType": "config",
                 "configPath": config_path.to_string_lossy(),
-                "instructions": "ProxyPal provider added to OpenCode. Run 'opencode' and use /models to select a model (e.g., proxypal/claude-sonnet-4-5-20250929). OpenCode uses AI SDK (ai-sdk.dev) and models.dev registry."
+                "modelsConfigured": models.len(),
+                "instructions": "ProxyPal provider added to OpenCode. Run 'opencode' and use /models to select a model (e.g., proxypal/gemini-2.5-pro). OpenCode uses AI SDK (ai-sdk.dev) and models.dev registry."
             }))
         },
         
@@ -3039,6 +3060,7 @@ pub fn run() {
             add_request_to_history,
             clear_request_history,
             test_agent_connection,
+            get_available_models,
             // API Keys Management
             get_gemini_api_keys,
             set_gemini_api_keys,

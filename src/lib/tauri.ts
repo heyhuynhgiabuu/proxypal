@@ -254,11 +254,12 @@ export interface AgentStatus {
 
 export interface AgentConfigResult {
   success: boolean;
-  configType: "env" | "file" | "both";
+  configType: "env" | "file" | "both" | "config";
   configPath?: string;
   authPath?: string;
   shellConfig?: string;
   instructions: string;
+  modelsConfigured?: number;
 }
 
 export async function detectCliAgents(): Promise<AgentStatus[]> {
@@ -267,8 +268,9 @@ export async function detectCliAgents(): Promise<AgentStatus[]> {
 
 export async function configureCliAgent(
   agentId: string,
+  models: AvailableModel[],
 ): Promise<AgentConfigResult> {
-  return invoke("configure_cli_agent", { agentId });
+  return invoke("configure_cli_agent", { agentId, models });
 }
 
 export async function getShellProfilePath(): Promise<string> {
@@ -552,4 +554,22 @@ export async function getLogs(lines?: number): Promise<LogEntry[]> {
 
 export async function clearLogs(): Promise<void> {
   return invoke("clear_logs");
+}
+
+// ============================================================================
+// Available Models (from /v1/models endpoint)
+// ============================================================================
+
+export interface AvailableModel {
+  id: string;
+  ownedBy: string; // "google", "openai", "qwen", "anthropic", etc.
+}
+
+export interface GroupedModels {
+  provider: string; // Display name: "Gemini", "OpenAI/Codex", "Qwen", etc.
+  models: string[];
+}
+
+export async function getAvailableModels(): Promise<AvailableModel[]> {
+  return invoke("get_available_models");
 }

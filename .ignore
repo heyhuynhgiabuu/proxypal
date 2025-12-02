@@ -1,2 +1,3 @@
-!.opencode/
-!backlog
+# Ignore for ripgrep/search tools
+.opencode/
+backlog/
