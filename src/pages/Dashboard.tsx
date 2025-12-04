@@ -388,23 +388,30 @@ export function DashboardPage() {
   const configuredAgents = () => agents().filter((a) => a.configured);
 
   const handleConfigureAgent = async (agentId: string) => {
-    if (!proxyStatus().running) {
+    // Agents that need models from the proxy (they configure with available model list)
+    const agentsNeedingModels = ["factory-droid", "opencode"];
+    const needsModels = agentsNeedingModels.includes(agentId);
+
+    if (needsModels && !proxyStatus().running) {
       toastStore.warning(
         "Start the proxy first",
-        "The proxy must be running to configure agents",
+        "The proxy must be running to configure this agent",
       );
       return;
     }
     setConfiguringAgent(agentId);
     try {
-      // Fetch available models first
-      const models = await getAvailableModels();
-      if (models.length === 0) {
-        toastStore.warning(
-          "No models available",
-          "Connect at least one provider to configure agents",
-        );
-        return;
+      // Fetch available models only for agents that need them
+      let models: AvailableModel[] = [];
+      if (needsModels) {
+        models = await getAvailableModels();
+        if (models.length === 0) {
+          toastStore.warning(
+            "No models available",
+            "Connect at least one provider to configure agents",
+          );
+          return;
+        }
       }
       const result = await configureCliAgent(agentId, models);
       const agent = agents().find((a) => a.id === agentId);

@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js";
+import { createSignal, For } from "solid-js";
 import { Button, Switch } from "../components/ui";
 import { appStore } from "../stores/app";
 import { toastStore } from "../stores/toast";
@@ -7,6 +7,8 @@ import { saveConfig } from "../lib/tauri";
 export function SettingsPage() {
   const { config, setConfig, setCurrentPage, authStatus } = appStore;
   const [saving, setSaving] = createSignal(false);
+  const [newMappingFrom, setNewMappingFrom] = createSignal("");
+  const [newMappingTo, setNewMappingTo] = createSignal("");
 
   const handleConfigChange = async (
     key: keyof ReturnType<typeof config>,
@@ -32,6 +34,52 @@ export function SettingsPage() {
     const auth = authStatus();
     return [auth.claude, auth.openai, auth.gemini, auth.qwen].filter(Boolean)
       .length;
+  };
+
+  const addModelMapping = async () => {
+    const from = newMappingFrom().trim();
+    const to = newMappingTo().trim();
+    if (!from || !to) {
+      toastStore.error("Both 'from' and 'to' model names are required");
+      return;
+    }
+    const currentMappings = config().ampModelMappings || [];
+    const newConfig = {
+      ...config(),
+      ampModelMappings: [...currentMappings, { from, to }],
+    };
+    setConfig(newConfig);
+    setNewMappingFrom("");
+    setNewMappingTo("");
+
+    setSaving(true);
+    try {
+      await saveConfig(newConfig);
+      toastStore.success("Model mapping added");
+    } catch (error) {
+      console.error("Failed to save config:", error);
+      toastStore.error("Failed to save settings", String(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeModelMapping = async (index: number) => {
+    const currentMappings = config().ampModelMappings || [];
+    const newMappings = currentMappings.filter((_, i) => i !== index);
+    const newConfig = { ...config(), ampModelMappings: newMappings };
+    setConfig(newConfig);
+
+    setSaving(true);
+    try {
+      await saveConfig(newConfig);
+      toastStore.success("Model mapping removed");
+    } catch (error) {
+      console.error("Failed to save config:", error);
+      toastStore.error("Failed to save settings", String(error));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -227,8 +275,119 @@ export function SettingsPage() {
                   . Required for Amp CLI to authenticate through the proxy.
                 </p>
               </label>
+
+              <div class="border-t border-gray-200 dark:border-gray-700" />
+
+              {/* Model Mappings */}
+              <div class="space-y-3">
+                <div>
+                  <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Model Mappings
+                  </span>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    Route Amp model requests to different available models
+                    (useful when you don't have direct Claude access)
+                  </p>
+                </div>
+
+                {/* Existing mappings */}
+                <For each={config().ampModelMappings || []}>
+                  {(mapping, index) => (
+                    <div class="flex items-center gap-2 p-2 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700">
+                      <div class="flex-1 flex items-center gap-2 text-xs font-mono overflow-hidden">
+                        <span
+                          class="text-gray-500 dark:text-gray-400 truncate"
+                          title={mapping.from}
+                        >
+                          {mapping.from}
+                        </span>
+                        <svg
+                          class="w-4 h-4 text-gray-400 flex-shrink-0"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M13 7l5 5m0 0l-5 5m5-5H6"
+                          />
+                        </svg>
+                        <span
+                          class="text-gray-700 dark:text-gray-300 truncate"
+                          title={mapping.to}
+                        >
+                          {mapping.to}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeModelMapping(index())}
+                        class="p-1 text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
+                        title="Remove mapping"
+                      >
+                        <svg
+                          class="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M6 18L18 6M6 6l12 12"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  )}
+                </For>
+
+                {/* Add new mapping */}
+                <div class="flex flex-col sm:flex-row gap-2">
+                  <input
+                    type="text"
+                    value={newMappingFrom()}
+                    onInput={(e) => setNewMappingFrom(e.currentTarget.value)}
+                    placeholder="From (e.g. claude-opus-4-5-20251101)"
+                    class="flex-1 px-2 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-mono focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth"
+                  />
+                  <input
+                    type="text"
+                    value={newMappingTo()}
+                    onInput={(e) => setNewMappingTo(e.currentTarget.value)}
+                    placeholder="To (e.g. gemini-2.0-flash)"
+                    class="flex-1 px-2 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-mono focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth"
+                  />
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={addModelMapping}
+                    disabled={
+                      !newMappingFrom().trim() || !newMappingTo().trim()
+                    }
+                  >
+                    <svg
+                      class="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M12 4v16m8-8H4"
+                      />
+                    </svg>
+                  </Button>
+                </div>
+              </div>
+
               <p class="text-xs text-gray-400 dark:text-gray-500">
-                After setting the API key, restart the proxy for changes to take
+                After changing settings, restart the proxy for changes to take
                 effect.
               </p>
             </div>

@@ -75,6 +75,12 @@ export async function refreshAuthStatus(): Promise<AuthStatus> {
   return invoke("refresh_auth_status");
 }
 
+// Amp model mapping for routing requests to different models
+export interface AmpModelMapping {
+  from: string;
+  to: string;
+}
+
 // Config
 export interface AppConfig {
   port: number;
@@ -89,6 +95,7 @@ export interface AppConfig {
   requestLogging: boolean;
   loggingToFile: boolean;
   ampApiKey: string;
+  ampModelMappings: AmpModelMapping[];
 }
 
 export async function getConfig(): Promise<AppConfig> {

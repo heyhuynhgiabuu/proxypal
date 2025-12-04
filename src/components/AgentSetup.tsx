@@ -8,6 +8,7 @@ import {
   getAvailableModels,
   type AgentStatus,
   type AgentConfigResult,
+  type AvailableModel,
 } from "../lib/tauri";
 import { toastStore } from "../stores/toast";
 import { appStore } from "../stores/app";
@@ -363,24 +364,31 @@ export function AgentSetup() {
   });
 
   const handleConfigure = async (agentId: string) => {
-    if (!proxyStatus().running) {
+    // Agents that need models from the proxy (they configure with available model list)
+    const agentsNeedingModels = ["factory-droid", "opencode"];
+    const needsModels = agentsNeedingModels.includes(agentId);
+
+    if (needsModels && !proxyStatus().running) {
       toastStore.warning(
         "Start the proxy first",
-        "The proxy must be running to configure agents",
+        "The proxy must be running to configure this agent",
       );
       return;
     }
 
     setConfiguring(agentId);
     try {
-      // Fetch available models first
-      const models = await getAvailableModels();
-      if (models.length === 0) {
-        toastStore.warning(
-          "No models available",
-          "Connect at least one provider to configure agents",
-        );
-        return;
+      // Fetch available models only for agents that need them
+      let models: AvailableModel[] = [];
+      if (needsModels) {
+        models = await getAvailableModels();
+        if (models.length === 0) {
+          toastStore.warning(
+            "No models available",
+            "Connect at least one provider to configure agents",
+          );
+          return;
+        }
       }
       const result = await configureCliAgent(agentId, models);
       const agent = agents().find((a) => a.id === agentId);

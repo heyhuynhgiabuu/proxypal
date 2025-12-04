@@ -96,6 +96,8 @@ pub struct AppConfig {
     pub config_version: u8,
     #[serde(default)]
     pub amp_api_key: String,
+    #[serde(default)]
+    pub amp_model_mappings: Vec<AmpModelMapping>,
 }
 
 fn default_usage_stats_enabled() -> bool {
@@ -104,6 +106,13 @@ fn default_usage_stats_enabled() -> bool {
 
 fn default_config_version() -> u8 {
     1
+}
+
+// Amp model mapping for routing requests to different models
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AmpModelMapping {
+    pub from: String,
+    pub to: String,
 }
 
 impl Default for AppConfig {
@@ -122,6 +131,7 @@ impl Default for AppConfig {
             logging_to_file: false,
             config_version: 1,
             amp_api_key: String::new(),
+            amp_model_mappings: Vec::new(),
         }
     }
 }
@@ -385,6 +395,17 @@ async fn start_proxy(
         format!("  upstream-api-key: \"{}\"", config.amp_api_key)
     };
     
+    // Build amp model-mappings section if configured
+    let amp_model_mappings_section = if config.amp_model_mappings.is_empty() {
+        "  # model-mappings:  # Optional: map Amp model requests to different models\n  #   - from: claude-opus-4-5-20251101\n  #     to: your-preferred-model".to_string()
+    } else {
+        let mut mappings = String::from("  model-mappings:");
+        for mapping in &config.amp_model_mappings {
+            mappings.push_str(&format!("\n    - from: {}\n      to: {}", mapping.from, mapping.to));
+        }
+        mappings
+    };
+    
     // Always regenerate config on start because CLIProxyAPI hashes the secret-key in place
     // and we need the plaintext key for Management API access
     let proxy_config = format!(
@@ -415,6 +436,7 @@ remote-management:
 ampcode:
   upstream-url: "https://ampcode.com"
 {}
+{}
   restrict-management-to-localhost: true
 "#,
         config.port,
@@ -425,7 +447,8 @@ ampcode:
         proxy_url_line,
         config.quota_switch_project,
         config.quota_switch_preview_model,
-        amp_api_key_line
+        amp_api_key_line,
+        amp_model_mappings_section
     );
     
     std::fs::write(&proxy_config_path, proxy_config).map_err(|e| e.to_string())?;
@@ -1859,7 +1882,7 @@ export CODE_ASSIST_ENDPOINT="{}"
             std::fs::create_dir_all(&factory_dir).map_err(|e| e.to_string())?;
             
             // Build dynamic custom_models array from available models
-            let custom_models: Vec<serde_json::Value> = models.iter().map(|m| {
+            let proxypal_models: Vec<serde_json::Value> = models.iter().map(|m| {
                 let (base_url, provider) = match m.owned_by.as_str() {
                     "anthropic" => (endpoint.clone(), "anthropic"),
                     _ => (format!("{}/v1", endpoint), "openai"),
@@ -1872,12 +1895,48 @@ export CODE_ASSIST_ENDPOINT="{}"
                 })
             }).collect();
             
-            let config_json = serde_json::json!({
-                "custom_models": custom_models
-            });
-            
             let config_path = factory_dir.join("config.json");
-            let config_str = serde_json::to_string_pretty(&config_json).map_err(|e| e.to_string())?;
+            
+            // Merge with existing config to preserve user's other custom_models
+            let final_config = if config_path.exists() {
+                if let Ok(existing) = std::fs::read_to_string(&config_path) {
+                    if let Ok(mut existing_json) = serde_json::from_str::<serde_json::Value>(&existing) {
+                        // Get existing custom_models, filter out proxypal entries, then add new ones
+                        let mut merged_models: Vec<serde_json::Value> = Vec::new();
+                        
+                        // Keep existing models that are NOT from proxypal (don't have proxypal-local api_key)
+                        if let Some(existing_models) = existing_json.get("custom_models").and_then(|v| v.as_array()) {
+                            for model in existing_models {
+                                let is_proxypal = model.get("api_key")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s == "proxypal-local")
+                                    .unwrap_or(false);
+                                if !is_proxypal {
+                                    merged_models.push(model.clone());
+                                }
+                            }
+                        }
+                        
+                        // Add all proxypal models
+                        merged_models.extend(proxypal_models);
+                        
+                        // Update the custom_models field
+                        existing_json["custom_models"] = serde_json::json!(merged_models);
+                        existing_json
+                    } else {
+                        // Existing file is not valid JSON, create new
+                        serde_json::json!({ "custom_models": proxypal_models })
+                    }
+                } else {
+                    // Can't read file, create new
+                    serde_json::json!({ "custom_models": proxypal_models })
+                }
+            } else {
+                // No existing config, create new
+                serde_json::json!({ "custom_models": proxypal_models })
+            };
+            
+            let config_str = serde_json::to_string_pretty(&final_config).map_err(|e| e.to_string())?;
             std::fs::write(&config_path, &config_str).map_err(|e| e.to_string())?;
             
             Ok(serde_json::json!({
@@ -1898,9 +1957,8 @@ export CODE_ASSIST_ENDPOINT="{}"
             // See: https://help.router-for.me/agent-client/amp-cli.html
             let amp_endpoint = format!("http://localhost:{}", port);
             
-            // Build full settings.json with all Amp CLI options
-            // See: https://ampcode.com/manual#configuration
-            let settings_json = serde_json::json!({
+            // ProxyPal settings to add/update
+            let proxypal_settings = serde_json::json!({
                 // Core proxy URL - routes all Amp traffic through CLIProxyAPI
                 "amp.url": amp_endpoint,
                 
@@ -1922,7 +1980,34 @@ export CODE_ASSIST_ENDPOINT="{}"
             });
             
             let config_path = amp_dir.join("settings.json");
-            let settings_content = serde_json::to_string_pretty(&settings_json).map_err(|e| e.to_string())?;
+            
+            // Merge with existing config to preserve user's other settings
+            let final_config = if config_path.exists() {
+                if let Ok(existing) = std::fs::read_to_string(&config_path) {
+                    if let Ok(mut existing_json) = serde_json::from_str::<serde_json::Value>(&existing) {
+                        // Merge proxypal settings into existing config
+                        if let Some(existing_obj) = existing_json.as_object_mut() {
+                            if let Some(new_obj) = proxypal_settings.as_object() {
+                                for (key, value) in new_obj {
+                                    existing_obj.insert(key.clone(), value.clone());
+                                }
+                            }
+                        }
+                        existing_json
+                    } else {
+                        // Existing file is not valid JSON, create new
+                        proxypal_settings
+                    }
+                } else {
+                    // Can't read file, create new
+                    proxypal_settings
+                }
+            } else {
+                // No existing config, create new
+                proxypal_settings
+            };
+            
+            let settings_content = serde_json::to_string_pretty(&final_config).map_err(|e| e.to_string())?;
             std::fs::write(&config_path, &settings_content).map_err(|e| e.to_string())?;
             
             // Also provide env var option and API key instructions
