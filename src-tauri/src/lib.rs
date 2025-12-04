@@ -1155,19 +1155,24 @@ async fn start_copilot(
         return Err("Node.js is required for GitHub Copilot support.\n\nPlease install Node.js from https://nodejs.org/ and restart ProxyPal.".to_string());
     }
     
-    // Determine whether to use global install or npx
-    let use_global = detection.installed;
+    // Determine command and arguments based on installation status
+    let (bin_path, mut args) = if detection.installed {
+        // Use copilot-api directly
+        let copilot_bin = detection.copilot_bin.clone()
+            .ok_or_else(|| "copilot-api binary path not found".to_string())?;
+        println!("[copilot] Using globally installed copilot-api: {}{}", 
+            copilot_bin,
+            detection.version.as_ref().map(|v| format!(" v{}", v)).unwrap_or_default());
+        (copilot_bin, vec![])
+    } else {
+        // Use npx to run copilot-api
+        let npx_bin = detection.npx_bin.clone()
+            .ok_or_else(|| "npx binary path not found".to_string())?;
+        println!("[copilot] Using npx: {} copilot-api@latest", npx_bin);
+        (npx_bin, vec!["copilot-api@latest".to_string()])
+    };
     
-    // Build copilot-api command arguments
-    // Command: copilot-api start --port 4141 [--account type] [--rate-limit N] [--rate-limit-wait]
-    // Or via npx: npx copilot-api@latest start --port 4141 ...
-    let mut args: Vec<String> = Vec::new();
-    
-    // For npx, we need to add the package name first
-    if !use_global {
-        args.push("copilot-api@latest".to_string());
-    }
-    
+    // Add common arguments
     args.push("start".to_string());
     args.push("--port".to_string());
     args.push(port.to_string());
@@ -1189,15 +1194,9 @@ async fn start_copilot(
         args.push("--rate-limit-wait".to_string());
     }
     
-    // Spawn copilot-api - prefer global install for faster startup
-    let command = if use_global {
-        println!("[copilot] Using globally installed copilot-api{}", 
-            detection.version.as_ref().map(|v| format!(" v{}", v)).unwrap_or_default());
-        app.shell().command("copilot-api").args(&args)
-    } else {
-        println!("[copilot] Using npx copilot-api@latest (consider installing globally with: npm i -g copilot-api)");
-        app.shell().command("npx").args(&args)
-    };
+    println!("[copilot] Executing: {} {}", bin_path, args.join(" "));
+    
+    let command = app.shell().command(&bin_path).args(&args);
     
     let (mut rx, child) = command.spawn().map_err(|e| format!("Failed to spawn copilot-api: {}. Make sure Node.js is installed.", e))?;
     
@@ -1382,36 +1381,98 @@ async fn check_copilot_health(state: State<'_, AppState>) -> Result<CopilotStatu
 pub struct CopilotApiDetection {
     pub installed: bool,
     pub version: Option<String>,
-    pub install_path: Option<String>,
+    pub copilot_bin: Option<String>,  // Path to copilot-api binary (if installed)
+    pub npx_bin: Option<String>,      // Path to npx binary (for fallback)
     pub node_available: bool,
 }
 
 #[tauri::command]
 async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetection, String> {
-    // Check if Node.js is available
-    let node_check = app
-        .shell()
-        .command("node")
-        .args(["--version"])
-        .output()
-        .await;
+    // Common Node.js installation paths on macOS/Linux
+    // GUI apps don't inherit shell PATH, so we need to check common locations
+    let node_paths = if cfg!(target_os = "macos") {
+        vec![
+            "/opt/homebrew/bin/node",      // Apple Silicon Homebrew
+            "/usr/local/bin/node",          // Intel Homebrew / manual install
+            "/usr/bin/node",                // System install
+            "/opt/local/bin/node",          // MacPorts
+        ]
+    } else if cfg!(target_os = "windows") {
+        vec![
+            "node", // Windows typically has proper PATH in GUI apps
+        ]
+    } else {
+        vec![
+            "/usr/bin/node",
+            "/usr/local/bin/node",
+            "/home/linuxbrew/.linuxbrew/bin/node",
+        ]
+    };
     
-    let node_available = node_check.as_ref().map(|o| o.status.success()).unwrap_or(false);
+    // Find working node binary
+    let mut node_bin: Option<String> = None;
+    for path in &node_paths {
+        let check = app.shell().command(path).args(["--version"]).output().await;
+        if check.as_ref().map(|o| o.status.success()).unwrap_or(false) {
+            node_bin = Some(path.to_string());
+            break;
+        }
+    }
     
-    if !node_available {
+    // Also try just "node" in case PATH is available
+    if node_bin.is_none() {
+        let check = app.shell().command("node").args(["--version"]).output().await;
+        if check.as_ref().map(|o| o.status.success()).unwrap_or(false) {
+            node_bin = Some("node".to_string());
+        }
+    }
+    
+    if node_bin.is_none() {
         return Ok(CopilotApiDetection {
             installed: false,
             version: None,
-            install_path: None,
+            copilot_bin: None,
+            npx_bin: None,
             node_available: false,
         });
     }
     
-    // Check if copilot-api is installed globally
-    // Try to get version using npm list -g
+    // Derive npm/npx paths from node path
+    let npx_bin = node_bin.as_ref().map(|n| n.replace("/node", "/npx")).unwrap_or_else(|| "npx".to_string());
+    let npm_bin = node_bin.as_ref().map(|n| n.replace("/node", "/npm")).unwrap_or_else(|| "npm".to_string());
+    
+    // Try to find copilot-api binary directly first
+    let copilot_paths = if cfg!(target_os = "macos") {
+        vec![
+            "/opt/homebrew/bin/copilot-api",
+            "/usr/local/bin/copilot-api",
+        ]
+    } else if cfg!(target_os = "windows") {
+        vec!["copilot-api"]
+    } else {
+        vec![
+            "/usr/local/bin/copilot-api",
+            "/usr/bin/copilot-api",
+        ]
+    };
+    
+    for path in &copilot_paths {
+        let check = app.shell().command(path).args(["--version"]).output().await;
+        if check.as_ref().map(|o| o.status.success()).unwrap_or(false) {
+            return Ok(CopilotApiDetection {
+                installed: true,
+                version: None,
+                copilot_bin: Some(path.to_string()),
+                npx_bin: Some(npx_bin),
+                node_available: true,
+            });
+        }
+    }
+    
+    // Check if copilot-api is installed globally via npm
     let npm_list = app
         .shell()
-        .command("npm")
+        .command(&npm_bin)
         .args(["list", "-g", "copilot-api", "--depth=0", "--json"])
         .output()
         .await;
@@ -1419,7 +1480,6 @@ async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetection
     if let Ok(output) = npm_list {
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
-            // Parse JSON to check if copilot-api is in dependencies
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&stdout) {
                 if let Some(deps) = json.get("dependencies") {
                     if let Some(copilot) = deps.get("copilot-api") {
@@ -1427,22 +1487,16 @@ async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetection
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string());
                         
-                        // Get the global prefix to determine install path
-                        let prefix_output = app
-                            .shell()
-                            .command("npm")
-                            .args(["config", "get", "prefix"])
-                            .output()
-                            .await;
-                        
-                        let install_path = prefix_output.ok()
-                            .filter(|o| o.status.success())
-                            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+                        // npm says it's installed, derive copilot-api path from npm prefix
+                        let copilot_bin = node_bin.as_ref()
+                            .map(|n| n.replace("/node", "/copilot-api"))
+                            .unwrap_or_else(|| "copilot-api".to_string());
                         
                         return Ok(CopilotApiDetection {
                             installed: true,
                             version,
-                            install_path,
+                            copilot_bin: Some(copilot_bin),
+                            npx_bin: Some(npx_bin),
                             node_available: true,
                         });
                     }
@@ -1451,31 +1505,12 @@ async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetection
         }
     }
     
-    // Also try `which copilot-api` or `where copilot-api` as fallback
-    let which_cmd = if cfg!(target_os = "windows") { "where" } else { "which" };
-    let which_output = app
-        .shell()
-        .command(which_cmd)
-        .args(["copilot-api"])
-        .output()
-        .await;
-    
-    if let Ok(output) = which_output {
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            return Ok(CopilotApiDetection {
-                installed: true,
-                version: None,
-                install_path: Some(path),
-                node_available: true,
-            });
-        }
-    }
-    
+    // Not installed globally
     Ok(CopilotApiDetection {
         installed: false,
         version: None,
-        install_path: None,
+        copilot_bin: None,
+        npx_bin: Some(npx_bin),
         node_available: true,
     })
 }
@@ -1490,26 +1525,56 @@ pub struct CopilotApiInstallResult {
 
 #[tauri::command]
 async fn install_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiInstallResult, String> {
-    // First check if Node.js/npm is available
-    let npm_check = app
-        .shell()
-        .command("npm")
-        .args(["--version"])
-        .output()
-        .await;
+    // Find npm binary - GUI apps don't inherit shell PATH on macOS
+    let npm_paths = if cfg!(target_os = "macos") {
+        vec![
+            "/opt/homebrew/bin/npm",
+            "/usr/local/bin/npm",
+            "/usr/bin/npm",
+            "/opt/local/bin/npm",
+        ]
+    } else if cfg!(target_os = "windows") {
+        vec!["npm"]
+    } else {
+        vec![
+            "/usr/bin/npm",
+            "/usr/local/bin/npm",
+            "/home/linuxbrew/.linuxbrew/bin/npm",
+        ]
+    };
     
-    if npm_check.is_err() || !npm_check.as_ref().map(|o| o.status.success()).unwrap_or(false) {
-        return Ok(CopilotApiInstallResult {
-            success: false,
-            message: "Node.js/npm is required. Please install Node.js from https://nodejs.org/".to_string(),
-            version: None,
-        });
+    let mut npm_bin: Option<String> = None;
+    for path in &npm_paths {
+        let check = app.shell().command(path).args(["--version"]).output().await;
+        if check.as_ref().map(|o| o.status.success()).unwrap_or(false) {
+            npm_bin = Some(path.to_string());
+            break;
+        }
     }
+    
+    // Also try just "npm" in case PATH is available
+    if npm_bin.is_none() {
+        let check = app.shell().command("npm").args(["--version"]).output().await;
+        if check.as_ref().map(|o| o.status.success()).unwrap_or(false) {
+            npm_bin = Some("npm".to_string());
+        }
+    }
+    
+    let npm_bin = match npm_bin {
+        Some(bin) => bin,
+        None => {
+            return Ok(CopilotApiInstallResult {
+                success: false,
+                message: "Node.js/npm is required. Please install Node.js from https://nodejs.org/".to_string(),
+                version: None,
+            });
+        }
+    };
     
     // Install copilot-api globally
     let install_output = app
         .shell()
-        .command("npm")
+        .command(&npm_bin)
         .args(["install", "-g", "copilot-api"])
         .output()
         .await

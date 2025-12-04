@@ -248,7 +248,8 @@ export interface CopilotStatus {
 export interface CopilotApiDetection {
   installed: boolean;
   version?: string;
-  installPath?: string;
+  copilotBin?: string; // Path to copilot-api binary (if installed)
+  npxBin?: string; // Path to npx binary (for fallback)
   nodeAvailable: boolean;
 }
 
