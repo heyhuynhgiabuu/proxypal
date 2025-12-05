@@ -2797,6 +2797,34 @@ fn which_exists(cmd: &str) -> bool {
         home.join(".bun/bin"),
     ];
     
+    // WSL-specific paths: check Windows side binaries
+    // On WSL, Windows paths are accessible via /mnt/c/
+    if std::path::Path::new("/mnt/c").exists() {
+        let windows_home = std::path::PathBuf::from("/mnt/c/Users")
+            .join(home.file_name().unwrap_or_default());
+        
+        // Add Windows-side paths
+        paths.push(windows_home.join("scoop/shims")); // Scoop package manager
+        paths.push(windows_home.join(".cargo/bin"));
+        paths.push(windows_home.join("go/bin"));
+        paths.push(windows_home.join(".bun/bin"));
+        paths.push(windows_home.join("AppData/Local/npm"));
+        paths.push(windows_home.join("AppData/Roaming/npm"));
+    }
+    
+    // Windows-specific paths (when running on Windows directly)
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(app_data) = std::env::var_os("LOCALAPPDATA") {
+            let app_data_path = std::path::PathBuf::from(app_data);
+            paths.push(app_data_path.join("npm"));
+            paths.push(app_data_path.join("scoop/shims"));
+        }
+        if let Some(program_files) = std::env::var_os("PROGRAMFILES") {
+            paths.push(std::path::PathBuf::from(program_files).join("Git\\cmd"));
+        }
+    }
+    
     // Add NVM node versions - scan for installed node versions
     let nvm_dir = home.join(".nvm/versions/node");
     if nvm_dir.exists() {
