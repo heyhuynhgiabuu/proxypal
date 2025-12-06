@@ -3022,48 +3022,66 @@ fn check_env_configured(var: &str, expected_prefix: &str) -> bool {
 // Source: https://models.dev (sst/models.dev repo)
 fn get_model_limits(model_id: &str, owned_by: &str) -> (u64, u64) {
     // Return (context_limit, output_limit)
-    match owned_by {
-        "anthropic" => {
-            // Claude 4.5 models: 200K context, 64K output
-            // Claude 3.5 haiku: 200K context, 8K output
-            if model_id.contains("3-5-haiku") || model_id.contains("3-haiku") {
-                (200000, 8192)
-            } else {
-                // sonnet-4-5, opus-4-5, haiku-4-5, and other Claude 4.x models
-                (200000, 64000)
-            }
+    // First check model_id patterns (handles Antigravity/proxied models like gemini-claude-*)
+    let model_lower = model_id.to_lowercase();
+    
+    // Claude models (direct or via Antigravity like gemini-claude-*)
+    if model_lower.contains("claude") {
+        // Claude 4.5 models: 200K context, 64K output
+        // Claude 3.5 haiku: 200K context, 8K output
+        if model_lower.contains("3-5-haiku") || model_lower.contains("3-haiku") {
+            return (200000, 8192);
+        } else {
+            // sonnet-4-5, opus-4-5, haiku-4-5, and other Claude 4.x models
+            return (200000, 64000);
         }
-        "google" => {
-            // Gemini 2.5 models: 1M context, 65K output
-            (1048576, 65536)
+    }
+    
+    // Gemini models (but not gemini-claude-* which is handled above)
+    if model_lower.contains("gemini") {
+        // Gemini 2.5 models: 1M context, 65K output
+        return (1048576, 65536);
+    }
+    
+    // GPT/OpenAI models
+    if model_lower.contains("gpt") || model_lower.starts_with("o1") || model_lower.starts_with("o3") {
+        // o1, o3 reasoning models: 200K context, 100K output
+        if model_lower.contains("o3") || model_lower.contains("o1") {
+            return (200000, 100000);
+        } else {
+            // gpt-4o, gpt-4o-mini: 128K context, 16K output
+            return (128000, 16384);
         }
-        "openai" => {
-            // o1, o3 reasoning models: 200K context, 100K output
-            if model_id.contains("o3") || model_id.contains("o1") {
-                (200000, 100000)
-            } else {
-                // gpt-4o, gpt-4o-mini: 128K context, 16K output
-                (128000, 16384)
-            }
-        }
-        "qwen" => {
+    }
+    
+    // Qwen models
+    if model_lower.contains("qwen") {
+        // Qwen3 Coder Plus: 1M context
+        if model_lower.contains("coder") {
+            return (1048576, 65536);
+        } else {
             // Qwen3 models: 262K context (max), 65K output
-            // Qwen3 Coder Plus: 1M context
-            if model_id.contains("coder") {
-                (1048576, 65536)
-            } else {
-                (262144, 65536)
-            }
+            return (262144, 65536);
         }
-        "deepseek" => {
-            // DeepSeek: 128K context
-            // deepseek-reasoner: 128K output, deepseek-chat: 8K output
-            if model_id.contains("reasoner") || model_id.contains("r1") {
-                (128000, 128000)
-            } else {
-                (128000, 8192)
-            }
+    }
+    
+    // DeepSeek models
+    if model_lower.contains("deepseek") {
+        // deepseek-reasoner: 128K output, deepseek-chat: 8K output
+        if model_lower.contains("reasoner") || model_lower.contains("r1") {
+            return (128000, 128000);
+        } else {
+            return (128000, 8192);
         }
+    }
+    
+    // Fallback to owned_by for any remaining models
+    match owned_by {
+        "anthropic" => (200000, 64000),
+        "google" => (1048576, 65536),
+        "openai" => (128000, 16384),
+        "qwen" => (262144, 65536),
+        "deepseek" => (128000, 8192),
         _ => (128000, 16384) // safe defaults
     }
 }
@@ -3361,8 +3379,15 @@ export AMP_API_KEY="proxypal-local"
                 let display_name = get_model_display_name(&m.id, &m.owned_by);
                 // Enable reasoning display for models with "-thinking" suffix
                 let is_thinking_model = m.id.ends_with("-thinking");
-                // For thinking models, ensure output limit > budgetTokens (16000) + buffer
-                let effective_output_limit = if is_thinking_model { 32000 } else { output_limit };
+                // For thinking models: budgetTokens = half of output_limit, min output = budgetTokens + buffer
+                // This ensures enough room for both thinking and response
+                let thinking_budget: u64 = output_limit / 2;  // Use half for thinking
+                let min_thinking_output: u64 = thinking_budget + 8192;  // thinking + 8K buffer for response
+                let effective_output_limit = if is_thinking_model { 
+                    std::cmp::max(output_limit, min_thinking_output) 
+                } else { 
+                    output_limit 
+                };
                 let mut model_config = serde_json::json!({
                     "name": display_name,
                     "limit": { "context": context_limit, "output": effective_output_limit }
@@ -3372,7 +3397,7 @@ export AMP_API_KEY="proxypal-local"
                     model_config["options"] = serde_json::json!({
                         "thinking": {
                             "type": "enabled",
-                            "budgetTokens": 16000
+                            "budgetTokens": thinking_budget
                         }
                     });
                 }
