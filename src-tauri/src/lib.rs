@@ -3019,31 +3019,51 @@ fn check_env_configured(var: &str, expected_prefix: &str) -> bool {
 }
 
 // Get model context/output limits based on model ID and provider
+// Source: https://models.dev (sst/models.dev repo)
 fn get_model_limits(model_id: &str, owned_by: &str) -> (u64, u64) {
     // Return (context_limit, output_limit)
     match owned_by {
         "anthropic" => {
-            if model_id.contains("opus") {
-                (200000, 16384)
-            } else if model_id.contains("haiku") {
+            // Claude 4.5 models: 200K context, 64K output
+            // Claude 3.5 haiku: 200K context, 8K output
+            if model_id.contains("3-5-haiku") || model_id.contains("3-haiku") {
                 (200000, 8192)
             } else {
-                (200000, 16384) // sonnet default
+                // sonnet-4-5, opus-4-5, haiku-4-5, and other Claude 4.x models
+                (200000, 64000)
             }
         }
         "google" => {
-            // Gemini models have huge context
-            (1000000, 65536)
+            // Gemini 2.5 models: 1M context, 65K output
+            (1048576, 65536)
         }
         "openai" => {
+            // o1, o3 reasoning models: 200K context, 100K output
             if model_id.contains("o3") || model_id.contains("o1") {
                 (200000, 100000)
             } else {
-                (128000, 32768)
+                // gpt-4o, gpt-4o-mini: 128K context, 16K output
+                (128000, 16384)
             }
         }
-        "qwen" => (131072, 16384),
-        "deepseek" => (64000, 8192),
+        "qwen" => {
+            // Qwen3 models: 262K context (max), 65K output
+            // Qwen3 Coder Plus: 1M context
+            if model_id.contains("coder") {
+                (1048576, 65536)
+            } else {
+                (262144, 65536)
+            }
+        }
+        "deepseek" => {
+            // DeepSeek: 128K context
+            // deepseek-reasoner: 128K output, deepseek-chat: 8K output
+            if model_id.contains("reasoner") || model_id.contains("r1") {
+                (128000, 128000)
+            } else {
+                (128000, 8192)
+            }
+        }
         _ => (128000, 16384) // safe defaults
     }
 }
