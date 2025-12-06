@@ -94,51 +94,46 @@ export interface AmpModelSlot {
 // Based on actual Amp CLI logs (~/.cache/amp/logs/cli.log) and ampcode.com/models
 // IMPORTANT: Model names must match EXACTLY what Amp sends in requests
 export const AMP_MODEL_SLOTS: AmpModelSlot[] = [
-  // Main Agent Modes
+  // Claude Opus 4.5 - used by Smart agent (default main agent)
   {
-    id: "smart",
+    id: "opus-4-5",
     name: "Smart",
-    fromModel: "claude-opus-4-5-20251101", // From Amp logs: "model":"claude-opus-4-5-20251101"
-    fromLabel: "Claude Opus 4.5",
+    fromModel: "claude-opus-4-5-20251101", // Opus 4.5 (200K context)
+    fromLabel: "Claude Opus 4.5 (200K)",
   },
+  // Claude Sonnet 4.5 - used by Librarian subagent
   {
-    id: "rush",
-    name: "Rush",
-    fromModel: "claude-haiku-4-5-20251001", // From Amp logs: "model":"claude-haiku-4-5-20251001"
+    id: "sonnet-4-5",
+    name: "Librarian",
+    fromModel: "claude-sonnet-4-5-20250929", // Sonnet 4.5 (1M context)
+    fromLabel: "Claude Sonnet 4.5 (1M)",
+  },
+  // Claude Haiku 4.5 - used by Rush agent and Search subagent
+  {
+    id: "haiku-4-5",
+    name: "Rush / Search",
+    fromModel: "claude-haiku-4-5-20251001", // Haiku 4.5
     fromLabel: "Claude Haiku 4.5",
   },
-  // Specialized Subagents
+  // GPT-5.1 - used by Oracle agent
   {
     id: "oracle",
     name: "Oracle",
     fromModel: "gpt-5.1",
-    fromLabel: "GPT-5.1 (Complex reasoning)",
+    fromLabel: "GPT-5.1",
   },
-  {
-    id: "search",
-    name: "Search",
-    fromModel: "claude-haiku-4-5-20251001",
-    fromLabel: "Claude Haiku 4.5 (Codebase retrieval)",
-  },
-  {
-    id: "librarian",
-    name: "Librarian",
-    fromModel: "claude-sonnet-4-5-20250514",
-    fromLabel: "Claude Sonnet 4.5 (External research)",
-  },
-  // Feature Models
+  // Gemini models for Review and Handoff
   {
     id: "review",
     name: "Review",
     fromModel: "gemini-2.5-flash-lite",
-    fromLabel: "Gemini 2.5 Flash-Lite (Code review)",
+    fromLabel: "Gemini 2.5 Flash-Lite",
   },
-  // System Models
   {
     id: "handoff",
     name: "Handoff",
     fromModel: "gemini-2.5-flash",
-    fromLabel: "Gemini 2.5 Flash (Context analysis)",
+    fromLabel: "Gemini 2.5 Flash",
   },
 ];
 
@@ -149,8 +144,8 @@ export const AMP_MODEL_ALIASES: Record<string, string> = {
   "claude-opus-4-5": "claude-opus-4-5-20251101",
   "claude-haiku-4.5": "claude-haiku-4-5-20251001",
   "claude-haiku-4-5": "claude-haiku-4-5-20251001",
-  "claude-sonnet-4.5": "claude-sonnet-4-5-20250514",
-  "claude-sonnet-4-5": "claude-sonnet-4-5-20250514",
+  "claude-sonnet-4.5": "claude-sonnet-4-5-20250929",
+  "claude-sonnet-4-5": "claude-sonnet-4-5-20250929",
 };
 
 // Complete list of GitHub Copilot models available via copilot-api
