@@ -1271,14 +1271,25 @@ async fn start_copilot(
     let detection = detect_copilot_api(app.clone()).await?;
     
     if !detection.node_available {
-        return Err("Node.js is required for GitHub Copilot support.\n\nPlease install Node.js from https://nodejs.org/ and restart ProxyPal.".to_string());
+        let checked = detection.checked_node_paths.join(", ");
+        return Err(format!(
+            "Node.js is required for GitHub Copilot support.\n\n\
+            Checked paths: {}\n\n\
+            Please install Node.js from https://nodejs.org/ or via a version manager (nvm, volta, fnm) and restart ProxyPal.",
+            if checked.is_empty() { "none".to_string() } else { checked }
+        ));
     }
     
     // Determine command and arguments based on installation status
     let (bin_path, mut args) = if detection.installed {
         // Use copilot-api directly
         let copilot_bin = detection.copilot_bin.clone()
-            .ok_or_else(|| "copilot-api binary path not found".to_string())?;
+            .ok_or_else(|| format!(
+                "copilot-api binary path not found.\n\n\
+                Checked paths: {}\n\n\
+                Install with: npm install -g copilot-api",
+                detection.checked_copilot_paths.join(", ")
+            ))?;
         println!("[copilot] Using globally installed copilot-api: {}{}", 
             copilot_bin,
             detection.version.as_ref().map(|v| format!(" v{}", v)).unwrap_or_default());
@@ -1286,7 +1297,12 @@ async fn start_copilot(
     } else {
         // Use npx to run copilot-api
         let npx_bin = detection.npx_bin.clone()
-            .ok_or_else(|| "npx binary path not found".to_string())?;
+            .ok_or_else(|| format!(
+                "npx binary not found (required to run copilot-api).\n\n\
+                Node path: {}\n\n\
+                Please ensure npm/npx is installed alongside Node.js.",
+                detection.node_bin.as_deref().unwrap_or("not found")
+            ))?;
         println!("[copilot] Using npx: {} copilot-api@latest", npx_bin);
         (npx_bin, vec!["copilot-api@latest".to_string()])
     };
@@ -1502,7 +1518,11 @@ pub struct CopilotApiDetection {
     pub version: Option<String>,
     pub copilot_bin: Option<String>,  // Path to copilot-api binary (if installed)
     pub npx_bin: Option<String>,      // Path to npx binary (for fallback)
+    pub npm_bin: Option<String>,      // Path to npm binary (for installs)
+    pub node_bin: Option<String>,     // Path to node binary actually used
     pub node_available: bool,
+    pub checked_node_paths: Vec<String>,
+    pub checked_copilot_paths: Vec<String>,
 }
 
 #[tauri::command]
@@ -1624,7 +1644,11 @@ async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetection
             version: None,
             copilot_bin: None,
             npx_bin: None,
+            npm_bin: None,
+            node_bin: None,
             node_available: false,
+            checked_node_paths: node_paths,
+            checked_copilot_paths: vec![],
         });
     }
     
@@ -1672,9 +1696,15 @@ async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetection
             format!("{}/.nvm/current/bin/copilot-api", home_str),
             format!("{}/.fnm/current/bin/copilot-api", home_str),
             format!("{}/.asdf/shims/copilot-api", home_str),
-            // System package managers
+            // Package managers
             "/opt/homebrew/bin/copilot-api".to_string(),
             "/usr/local/bin/copilot-api".to_string(),
+            "/usr/bin/copilot-api".to_string(),
+            // pnpm/yarn global bins
+            format!("{}/Library/pnpm/copilot-api", home_str),
+            format!("{}/.local/share/pnpm/copilot-api", home_str),
+            format!("{}/.yarn/bin/copilot-api", home_str),
+            format!("{}/.config/yarn/global/node_modules/.bin/copilot-api", home_str),
         ]
     } else if cfg!(target_os = "windows") {
         vec![
@@ -1707,7 +1737,11 @@ async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetection
                 version: None,
                 copilot_bin: Some(path.to_string()),
                 npx_bin: Some(npx_bin),
+                npm_bin: Some(npm_bin),
+                node_bin: node_bin.clone(),
                 node_available: true,
+                checked_node_paths: node_paths,
+                checked_copilot_paths: copilot_paths,
             });
         }
     }
@@ -1740,7 +1774,11 @@ async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetection
                             version,
                             copilot_bin: Some(copilot_bin),
                             npx_bin: Some(npx_bin),
+                            npm_bin: Some(npm_bin),
+                            node_bin: node_bin.clone(),
                             node_available: true,
+                            checked_node_paths: node_paths,
+                            checked_copilot_paths: copilot_paths,
                         });
                     }
                 }
@@ -1754,7 +1792,11 @@ async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetection
         version: None,
         copilot_bin: None,
         npx_bin: Some(npx_bin),
+        npm_bin: Some(npm_bin),
+        node_bin: node_bin.clone(),
         node_available: true,
+        checked_node_paths: node_paths,
+        checked_copilot_paths: copilot_paths,
     })
 }
 

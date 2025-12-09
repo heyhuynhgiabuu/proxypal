@@ -18,8 +18,10 @@ import {
   deleteOAuthExcludedModels,
   getConfigYaml,
   setConfigYaml,
+  detectCopilotApi,
   type AvailableModel,
   type OAuthExcludedModels,
+  type CopilotApiDetection,
 } from "../lib/tauri";
 import type {
   AmpOpenAIModel,
@@ -90,6 +92,27 @@ export function SettingsPage() {
   const [yamlContent, setYamlContent] = createSignal("");
   const [loadingYaml, setLoadingYaml] = createSignal(false);
   const [savingYaml, setSavingYaml] = createSignal(false);
+
+  // Copilot Detection state
+  const [copilotDetection, setCopilotDetection] =
+    createSignal<CopilotApiDetection | null>(null);
+  const [detectingCopilot, setDetectingCopilot] = createSignal(false);
+  const [copilotDetectionExpanded, setCopilotDetectionExpanded] =
+    createSignal(false);
+
+  // Run copilot detection
+  const runCopilotDetection = async () => {
+    setDetectingCopilot(true);
+    try {
+      const result = await detectCopilotApi();
+      setCopilotDetection(result);
+    } catch (error) {
+      console.error("Copilot detection failed:", error);
+      toastStore.error(`Detection failed: ${error}`);
+    } finally {
+      setDetectingCopilot(false);
+    }
+  };
 
   // Fetch available models and runtime settings when proxy is running
   createEffect(async () => {
@@ -2265,6 +2288,160 @@ export function SettingsPage() {
               </div>
             </div>
           </Show>
+
+          {/* Copilot Detection */}
+          <div class="space-y-4">
+            <button
+              type="button"
+              onClick={() =>
+                setCopilotDetectionExpanded(!copilotDetectionExpanded())
+              }
+              class="flex items-center justify-between w-full text-left"
+            >
+              <h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+                Copilot API Detection
+              </h2>
+              <svg
+                class={`w-5 h-5 text-gray-400 transition-transform ${copilotDetectionExpanded() ? "rotate-180" : ""}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M19 9l-7 7-7-7"
+                />
+              </svg>
+            </button>
+
+            <Show when={copilotDetectionExpanded()}>
+              <div class="space-y-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                  Check if Node.js and copilot-api are detected on your system.
+                  This helps diagnose Copilot startup issues.
+                </p>
+
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={runCopilotDetection}
+                  disabled={detectingCopilot()}
+                >
+                  {detectingCopilot() ? "Detecting..." : "Run Detection"}
+                </Button>
+
+                <Show when={copilotDetection()}>
+                  {(detection) => (
+                    <div class="space-y-3 text-xs">
+                      <div class="flex items-center gap-2">
+                        <span
+                          class={`w-2 h-2 rounded-full ${detection().nodeAvailable ? "bg-green-500" : "bg-red-500"}`}
+                        />
+                        <span class="font-medium">Node.js:</span>
+                        <span
+                          class={
+                            detection().nodeAvailable
+                              ? "text-green-600 dark:text-green-400"
+                              : "text-red-600 dark:text-red-400"
+                          }
+                        >
+                          {detection().nodeAvailable
+                            ? detection().nodeBin || "Available"
+                            : "Not Found"}
+                        </span>
+                      </div>
+
+                      <div class="flex items-center gap-2">
+                        <span
+                          class={`w-2 h-2 rounded-full ${detection().installed ? "bg-green-500" : "bg-yellow-500"}`}
+                        />
+                        <span class="font-medium">copilot-api:</span>
+                        <span
+                          class={
+                            detection().installed
+                              ? "text-green-600 dark:text-green-400"
+                              : "text-yellow-600 dark:text-yellow-400"
+                          }
+                        >
+                          {detection().installed
+                            ? `Installed${detection().version ? ` (v${detection().version})` : ""}`
+                            : "Not installed (will use npx)"}
+                        </span>
+                      </div>
+
+                      <Show when={detection().copilotBin}>
+                        <div class="text-gray-500 dark:text-gray-400 pl-4">
+                          Path:{" "}
+                          <code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">
+                            {detection().copilotBin}
+                          </code>
+                        </div>
+                      </Show>
+
+                      <Show when={detection().npxBin}>
+                        <div class="text-gray-500 dark:text-gray-400 pl-4">
+                          npx:{" "}
+                          <code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">
+                            {detection().npxBin}
+                          </code>
+                        </div>
+                      </Show>
+
+                      <Show when={!detection().nodeAvailable}>
+                        <div class="mt-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded text-red-700 dark:text-red-400">
+                          <p class="font-medium">Node.js not found</p>
+                          <p class="mt-1">
+                            Install Node.js from{" "}
+                            <a
+                              href="https://nodejs.org/"
+                              target="_blank"
+                              class="underline"
+                            >
+                              nodejs.org
+                            </a>{" "}
+                            or use a version manager (nvm, volta, fnm).
+                          </p>
+                          <Show when={detection().checkedNodePaths.length > 0}>
+                            <details class="mt-2">
+                              <summary class="cursor-pointer text-xs">
+                                Checked paths
+                              </summary>
+                              <ul class="mt-1 pl-4 text-xs opacity-75">
+                                <For each={detection().checkedNodePaths}>
+                                  {(p) => <li>{p}</li>}
+                                </For>
+                              </ul>
+                            </details>
+                          </Show>
+                        </div>
+                      </Show>
+
+                      <Show
+                        when={
+                          detection().nodeAvailable && !detection().installed
+                        }
+                      >
+                        <div class="mt-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded text-yellow-700 dark:text-yellow-400">
+                          <p class="font-medium">
+                            copilot-api not installed globally
+                          </p>
+                          <p class="mt-1">
+                            Copilot will work via npx, but for faster startup
+                            you can install globally:
+                          </p>
+                          <code class="block mt-1 bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded text-xs">
+                            npm install -g copilot-api
+                          </code>
+                        </div>
+                      </Show>
+                    </div>
+                  )}
+                </Show>
+              </div>
+            </Show>
+          </div>
 
           {/* Accounts */}
           <div class="space-y-4">

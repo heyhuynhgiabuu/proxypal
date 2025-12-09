@@ -246,7 +246,11 @@ export interface CopilotApiDetection {
   version?: string;
   copilotBin?: string; // Path to copilot-api binary (if installed)
   npxBin?: string; // Path to npx binary (for fallback)
+  npmBin?: string; // Path to npm binary (for installs)
+  nodeBin?: string; // Path to node binary actually used
   nodeAvailable: boolean;
+  checkedNodePaths: string[];
+  checkedCopilotPaths: string[];
 }
 
 // Copilot API install result

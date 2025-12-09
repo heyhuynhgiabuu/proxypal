@@ -35,6 +35,7 @@ export function CopilotCard(props: CopilotCardProps) {
   const [starting, setStarting] = createSignal(false);
   const [stopping, setStopping] = createSignal(false);
   const [authMessage, setAuthMessage] = createSignal<string | null>(null);
+  const [startError, setStartError] = createSignal<string | null>(null);
   const [expanded, setExpanded] = createSignal(false);
   const [apiDetection, setApiDetection] =
     createSignal<CopilotApiDetection | null>(null);
@@ -126,6 +127,7 @@ export function CopilotCard(props: CopilotCardProps) {
     if (starting() || status().running) return;
     setStarting(true);
     setAuthMessage(null);
+    setStartError(null);
 
     try {
       const newStatus = await startCopilot();
@@ -144,7 +146,9 @@ export function CopilotCard(props: CopilotCardProps) {
       }
     } catch (err) {
       console.error("Failed to start copilot:", err);
-      toastStore.error("Failed to start Copilot", String(err));
+      const errorMsg = String(err);
+      setStartError(errorMsg);
+      toastStore.error("Failed to start Copilot", errorMsg);
     } finally {
       setStarting(false);
     }
@@ -272,6 +276,52 @@ export function CopilotCard(props: CopilotCardProps) {
                     </svg>
                     Open GitHub Authentication
                   </Button>
+                </div>
+              </div>
+            </div>
+          </Show>
+
+          {/* Start error message */}
+          <Show when={startError() && !status().running}>
+            <div class="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+              <div class="flex items-start gap-3">
+                <svg
+                  class="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                <div class="flex-1">
+                  <p class="text-sm font-medium text-red-800 dark:text-red-200">
+                    Failed to Start Copilot
+                  </p>
+                  <p class="text-xs text-red-700 dark:text-red-300 mt-1 whitespace-pre-wrap">
+                    {startError()}
+                  </p>
+                  <p class="text-xs text-red-600 dark:text-red-400 mt-2">
+                    Go to{" "}
+                    <a
+                      href="#settings"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        // Navigate to settings - this will be handled by the parent
+                        window.dispatchEvent(
+                          new CustomEvent("navigate-to-settings"),
+                        );
+                      }}
+                      class="underline font-medium hover:text-red-800 dark:hover:text-red-200"
+                    >
+                      Settings → Copilot API Detection
+                    </a>{" "}
+                    for more details.
+                  </p>
                 </div>
               </div>
             </div>
