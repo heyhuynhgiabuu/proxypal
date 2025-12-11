@@ -1362,8 +1362,7 @@ async fn start_copilot(
         let copilot_bin = detection.copilot_bin.clone()
             .ok_or_else(|| format!(
                 "copilot-api binary path not found.\n\n\
-                Checked paths: {}\n\n\
-                Install with: npm install -g copilot-api",
+                Checked paths: {}",
                 detection.checked_copilot_paths.join(", ")
             ))?;
         println!("[copilot] Using globally installed copilot-api: {}{}", 
@@ -1474,15 +1473,17 @@ async fn start_copilot(
     });
     
     // Give it a moment to start, then poll for authentication
-    // copilot-api typically takes 3-8 seconds to fully authenticate on first run
+    // copilot-api typically takes 5-15 seconds to fully authenticate on first run
+    // We poll for up to 30 seconds to ensure we catch slower authentication
     let mut authenticated = false;
-    for _ in 0..16 {
+    for i in 0..60 {
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
         
         // Check if stdout listener already detected authentication
         {
             let status = state.copilot_status.lock().unwrap();
             if status.authenticated {
+                println!("✓ Copilot authenticated via stdout detection at {:.1}s", i as f32 * 0.5);
                 authenticated = true;
                 break;
             }
@@ -1496,9 +1497,15 @@ async fn start_copilot(
             .await
         {
             if response.status().is_success() {
+                println!("✓ Copilot authenticated via health check at {:.1}s", i as f32 * 0.5);
                 authenticated = true;
                 break;
             }
+        }
+        
+        // Log progress every 5 seconds
+        if i > 0 && i % 10 == 0 {
+            println!("⏳ Waiting for Copilot authentication... ({:.0}s elapsed)", i as f32 * 0.5);
         }
     }
     

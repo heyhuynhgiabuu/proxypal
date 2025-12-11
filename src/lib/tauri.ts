@@ -93,6 +93,7 @@ export interface AmpModelSlot {
 // Default Amp model slots (these are the models Amp CLI uses)
 // Based on actual Amp CLI logs (~/.cache/amp/logs/cli.log) and ampcode.com/models
 // IMPORTANT: Model names must match EXACTLY what Amp sends in requests
+// NOTE: When using Copilot provider, these get mapped to copilot-prefixed models
 export const AMP_MODEL_SLOTS: AmpModelSlot[] = [
 	// Claude Opus 4.5 - used by Smart agent (default main agent)
 	{

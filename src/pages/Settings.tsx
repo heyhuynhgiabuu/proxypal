@@ -2554,25 +2554,6 @@ export function SettingsPage() {
 													</Show>
 												</div>
 											</Show>
-
-											<Show
-												when={
-													detection().nodeAvailable && !detection().installed
-												}
-											>
-												<div class="mt-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded text-yellow-700 dark:text-yellow-400">
-													<p class="font-medium">
-														copilot-api not installed globally
-													</p>
-													<p class="mt-1">
-														Copilot will work via npx, but for faster startup
-														you can install globally:
-													</p>
-													<code class="block mt-1 bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded text-xs">
-														npm install -g copilot-api
-													</code>
-												</div>
-											</Show>
 										</div>
 									)}
 								</Show>
@@ -2938,7 +2919,7 @@ export function SettingsPage() {
 								ProxyPal
 							</h3>
 							<p class="text-sm text-gray-500 dark:text-gray-400">
-								Version 0.1.27
+								Version 0.1.28
 							</p>
 							<p class="text-xs text-gray-400 dark:text-gray-500 mt-2">
 								Built with love by OpenCodeKit
