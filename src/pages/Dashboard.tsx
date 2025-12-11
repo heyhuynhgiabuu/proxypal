@@ -602,7 +602,7 @@ export function DashboardPage() {
 
   const handleConfigureAgent = async (agentId: string) => {
     // Agents that need models from the proxy (they configure with available model list)
-    const agentsNeedingModels = ["factory-droid", "opencode"];
+    const agentsNeedingModels = ["factory-droid", "opencode", "openhands"];
     const needsModels = agentsNeedingModels.includes(agentId);
 
     if (needsModels && !proxyStatus().running) {

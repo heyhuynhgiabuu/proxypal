@@ -3189,6 +3189,31 @@ fn detect_cli_agents(state: State<AppState>) -> Vec<AgentStatus> {
         docs_url: "https://opencode.ai/docs/providers/".to_string(),
     });
     
+    // 7. OpenHands - uses ~/.openhands/config.toml or LLM_BASE_URL env
+    let openhands_installed = which_exists("openhands");
+    let openhands_config = home.join(".openhands/config.toml");
+    let openhands_configured = check_env_configured("LLM_BASE_URL", &endpoint) || {
+        if openhands_config.exists() {
+            std::fs::read_to_string(&openhands_config)
+                .map(|c| c.contains(&endpoint) || c.contains("127.0.0.1") || c.contains("proxypal"))
+                .unwrap_or(false)
+        } else {
+            false
+        }
+    };
+    
+    agents.push(AgentStatus {
+        id: "openhands".to_string(),
+        name: "OpenHands".to_string(),
+        description: "AI software development agent".to_string(),
+        installed: openhands_installed,
+        configured: openhands_configured,
+        config_type: "both".to_string(),
+        config_path: Some(openhands_config.to_string_lossy().to_string()),
+        logo: "/logos/openhands.svg".to_string(),
+        docs_url: "https://docs.openhands.dev/openhands/usage/advanced/configuration-options".to_string(),
+    });
+    
     agents
 }
 
@@ -3788,6 +3813,79 @@ export AMP_API_KEY="proxypal-local"
                 "configPath": config_path.to_string_lossy(),
                 "modelsConfigured": models.len(),
                 "instructions": "ProxyPal provider added to OpenCode. Run 'opencode' and use /models to select a model (e.g., proxypal/gemini-2.5-pro). OpenCode uses AI SDK (ai-sdk.dev) and models.dev registry."
+            }))
+        },
+        
+        "openhands" => {
+            // OpenHands uses ~/.openhands/config.toml and/or environment variables
+            // See: https://docs.openhands.dev/openhands/usage/advanced/configuration-options
+            let openhands_dir = home.join(".openhands");
+            std::fs::create_dir_all(&openhands_dir).map_err(|e| e.to_string())?;
+            
+            // Determine a good default model from available models
+            let default_model = models.iter()
+                .find(|m| m.id.contains("claude") && m.id.contains("sonnet"))
+                .or_else(|| models.iter().find(|m| m.id.contains("gpt-4")))
+                .or_else(|| models.first())
+                .map(|m| m.id.clone())
+                .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
+            
+            // Create config.toml with LLM settings pointing to ProxyPal
+            let config_content = format!(r#"# ProxyPal - OpenHands Configuration
+# See: https://docs.openhands.dev/openhands/usage/advanced/configuration-options
+
+[core]
+# Default agent to use
+default_agent = "CodeActAgent"
+
+[llm]
+# ProxyPal endpoint - routes through your configured providers
+base_url = "{}/v1"
+api_key = "proxypal-local"
+model = "{}"
+
+# Optional: Increase limits for complex tasks
+# max_iterations = 100
+# max_budget_per_task = 0.0
+"#, endpoint, default_model);
+            
+            let config_path = openhands_dir.join("config.toml");
+            
+            // If config exists, try to preserve non-LLM settings
+            let final_content = if config_path.exists() {
+                if let Ok(existing) = std::fs::read_to_string(&config_path) {
+                    // Simple approach: if it already has our config, replace it
+                    // Otherwise prepend our LLM config
+                    if existing.contains("# ProxyPal") {
+                        // Replace existing ProxyPal config
+                        config_content
+                    } else {
+                        // Prepend ProxyPal config to preserve user's other settings
+                        format!("{}\n\n# User's existing configuration below:\n{}", config_content, existing)
+                    }
+                } else {
+                    config_content
+                }
+            } else {
+                config_content
+            };
+            
+            std::fs::write(&config_path, &final_content).map_err(|e| e.to_string())?;
+            
+            // Also provide environment variable option
+            let shell_config = format!(r#"# ProxyPal - OpenHands Configuration (alternative to config.toml)
+export LLM_BASE_URL="{}/v1"
+export LLM_API_KEY="proxypal-local"
+export LLM_MODEL="{}"
+"#, endpoint, default_model);
+            
+            Ok(serde_json::json!({
+                "success": true,
+                "configType": "both",
+                "configPath": config_path.to_string_lossy(),
+                "shellConfig": shell_config,
+                "modelsConfigured": models.len(),
+                "instructions": "OpenHands has been configured. Run 'openhands' to start. You can also use environment variables instead of the config file."
             }))
         },
         
