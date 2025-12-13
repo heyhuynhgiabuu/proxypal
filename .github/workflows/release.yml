@@ -85,72 +85,12 @@ jobs:
             | Linux | `.deb` package |
           releaseDraft: false
           prerelease: false
+          updaterJsonPreferNsis: true
           args: --target ${{ matrix.target }}
-
-  updater-json:
-    name: Generate Updater JSON
-    needs: release
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Download release assets and generate latest.json
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          REPO="${GITHUB_REPOSITORY}"
-
-          # Wait for all assets to be available (large artifacts ~20MB each)
-          sleep 60
-
-          # Get release info
-          RELEASE_DATE=$(gh release view $GITHUB_REF_NAME --repo $REPO --json publishedAt -q .publishedAt)
-
-          # Download signature files
-          gh release download $GITHUB_REF_NAME --repo $REPO --pattern "*.sig" --dir ./sigs || true
-
-          # Read signatures (empty string if not found)
-          SIG_DARWIN_AARCH64=$(cat ./sigs/ProxyPal_aarch64.app.tar.gz.sig 2>/dev/null || echo "")
-          SIG_DARWIN_X64=$(cat ./sigs/ProxyPal_x64.app.tar.gz.sig 2>/dev/null || echo "")
-          SIG_LINUX=$(cat ./sigs/ProxyPal_${VERSION}_amd64.AppImage.sig 2>/dev/null || echo "")
-          SIG_WINDOWS=$(cat ./sigs/ProxyPal_${VERSION}_x64-setup.nsis.zip.sig 2>/dev/null || echo "")
-
-          # Generate latest.json with signatures
-          cat > latest.json <<EOF
-          {
-            "version": "${VERSION}",
-            "notes": "See the release notes on GitHub",
-            "pub_date": "${RELEASE_DATE}",
-            "platforms": {
-              "darwin-aarch64": {
-                "url": "https://github.com/${REPO}/releases/download/${GITHUB_REF_NAME}/ProxyPal_aarch64.app.tar.gz",
-                "signature": "${SIG_DARWIN_AARCH64}"
-              },
-              "darwin-x86_64": {
-                "url": "https://github.com/${REPO}/releases/download/${GITHUB_REF_NAME}/ProxyPal_x64.app.tar.gz",
-                "signature": "${SIG_DARWIN_X64}"
-              },
-              "linux-x86_64": {
-                "url": "https://github.com/${REPO}/releases/download/${GITHUB_REF_NAME}/ProxyPal_${VERSION}_amd64.AppImage",
-                "signature": "${SIG_LINUX}"
-              },
-              "windows-x86_64": {
-                "url": "https://github.com/${REPO}/releases/download/${GITHUB_REF_NAME}/ProxyPal_${VERSION}_x64-setup.nsis.zip",
-                "signature": "${SIG_WINDOWS}"
-              }
-            }
-          }
-          EOF
-
-          cat latest.json
-
-          # Upload to release
-          gh release upload $GITHUB_REF_NAME latest.json --repo $REPO --clobber
 
   notify:
     name: Discord Notification
-    needs: [release, updater-json]
+    needs: release
     runs-on: ubuntu-latest
     if: always()
     steps:

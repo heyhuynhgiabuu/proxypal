@@ -28,6 +28,7 @@
 		}
 	},
 	"bundle": {
+		"createUpdaterArtifacts": true,
 		"externalBin": ["binaries/cliproxyapi"],
 		"active": true,
 		"targets": "all",
