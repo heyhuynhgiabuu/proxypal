@@ -3322,7 +3322,7 @@ export function SettingsPage() {
 												<div
 													class="h-full bg-brand-500 transition-all duration-300"
 													style={{
-														width: `${updateProgress()?.contentLength ? ((updateProgress()?.chunkLength || 0) / (updateProgress()?.contentLength || 1)) * 100 : 0}%`,
+														width: `${(updateProgress()?.contentLength ?? 0) > 0 ? ((updateProgress()?.chunkLength ?? 0) / (updateProgress()?.contentLength ?? 1)) * 100 : 0}%`,
 													}}
 												/>
 											</div>
