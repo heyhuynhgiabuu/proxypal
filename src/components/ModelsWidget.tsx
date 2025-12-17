@@ -40,18 +40,34 @@ const getProviderColor = (ownedBy: string): string => {
 	return colors[ownedBy] || "bg-gray-500";
 };
 
+// Derive provider to fix aliasing issues (e.g., antigravity models aliased to Gemini IDs)
+const deriveProvider = (model: ModelInfo): string => {
+	const id = model.id.toLowerCase();
+
+	// GitHub Copilot
+	if (id.startsWith("github-copilot/")) return "copilot";
+
+	// Antigravity aliases (Gemini + Claude hybrids)
+	if (id.includes("gemini-claude") || id.startsWith("antigravity-")) {
+		return "antigravity";
+	}
+
+	// Default to backend ownedBy
+	return model.ownedBy.toLowerCase();
+};
+
 export const ModelsWidget: Component<ModelsWidgetProps> = (props) => {
 	const [expanded, setExpanded] = createSignal(false);
 	const [selectedProvider, setSelectedProvider] = createSignal<string | null>(
 		null,
 	);
 
-	// Group models by provider
+	// Group models by provider (with frontend override)
 	const providerGroups = createMemo<ProviderGroup[]>(() => {
 		const groups: Record<string, ModelInfo[]> = {};
 
 		for (const model of props.models) {
-			const provider = model.ownedBy;
+			const provider = deriveProvider(model);
 			if (!groups[provider]) {
 				groups[provider] = [];
 			}
