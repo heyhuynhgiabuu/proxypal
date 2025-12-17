@@ -5393,9 +5393,9 @@ async fn set_websocket_auth(state: State<'_, AppState>, value: bool) -> Result<(
     Ok(())
 }
 
-// Get prioritize model mappings from Management API
+// Get force model mappings from Management API
 #[tauri::command]
-async fn get_prioritize_model_mappings(state: State<'_, AppState>) -> Result<bool, String> {
+async fn get_force_model_mappings(state: State<'_, AppState>) -> Result<bool, String> {
     let port = state.config.lock().unwrap().port;
     let url = get_management_url(port, "ampcode/force-model-mappings");
     
@@ -5405,7 +5405,7 @@ async fn get_prioritize_model_mappings(state: State<'_, AppState>) -> Result<boo
         .header("X-Management-Key", "proxypal-mgmt-key")
         .send()
         .await
-        .map_err(|e| format!("Failed to get prioritize model mappings: {}", e))?;
+        .map_err(|e| format!("Failed to get force model mappings: {}", e))?;
     
     if !response.status().is_success() {
         return Ok(false); // Default to false
@@ -5415,9 +5415,9 @@ async fn get_prioritize_model_mappings(state: State<'_, AppState>) -> Result<boo
     Ok(json.get("force-model-mappings").and_then(|v| v.as_bool()).unwrap_or(false))
 }
 
-// Set prioritize model mappings via Management API
+// Set force model mappings via Management API
 #[tauri::command]
-async fn set_prioritize_model_mappings(state: State<'_, AppState>, value: bool) -> Result<(), String> {
+async fn set_force_model_mappings(state: State<'_, AppState>, value: bool) -> Result<(), String> {
     let port = state.config.lock().unwrap().port;
     let url = get_management_url(port, "ampcode/force-model-mappings");
     
@@ -5428,13 +5428,18 @@ async fn set_prioritize_model_mappings(state: State<'_, AppState>, value: bool) 
         .json(&serde_json::json!({ "value": value }))
         .send()
         .await
-        .map_err(|e| format!("Failed to set prioritize model mappings: {}", e))?;
+        .map_err(|e| format!("Failed to set force model mappings: {}", e))?;
     
     if !response.status().is_success() {
         let status = response.status();
         let text = response.text().await.unwrap_or_default();
-        return Err(format!("Failed to set prioritize model mappings: {} - {}", status, text));
+        return Err(format!("Failed to set force model mappings: {} - {}", status, text));
     }
+    
+    // Persist to Tauri config so it survives restart
+    let mut config = state.config.lock().unwrap();
+    config.force_model_mappings = value;
+    save_config_to_file(&config).map_err(|e| format!("Failed to save config: {}", e))?;
     
     Ok(())
 }
@@ -6099,8 +6104,8 @@ pub fn run() {
             set_max_retry_interval,
             get_websocket_auth,
             set_websocket_auth,
-            get_prioritize_model_mappings,
-            set_prioritize_model_mappings,
+            get_force_model_mappings,
+            set_force_model_mappings,
             get_oauth_excluded_models,
             set_oauth_excluded_models,
             delete_oauth_excluded_models,

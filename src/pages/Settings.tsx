@@ -17,9 +17,9 @@ import {
 	getAvailableModels,
 	getCloseToTray,
 	getConfigYaml,
+	getForceModelMappings,
 	getMaxRetryInterval,
 	getOAuthExcludedModels,
-	getPrioritizeModelMappings,
 	getReasoningEffortSettings,
 	getThinkingBudgetSettings,
 	getThinkingBudgetTokens,
@@ -30,9 +30,9 @@ import {
 	saveConfig,
 	setCloseToTray,
 	setConfigYaml,
+	setForceModelMappings,
 	setMaxRetryInterval,
 	setOAuthExcludedModels,
-	setPrioritizeModelMappings,
 	setReasoningEffortSettings,
 	setThinkingBudgetSettings,
 	setWebsocketAuth,
@@ -98,12 +98,12 @@ export function SettingsPage() {
 	// Management API runtime settings
 	const [maxRetryInterval, setMaxRetryIntervalState] = createSignal<number>(0);
 	const [websocketAuth, setWebsocketAuthState] = createSignal<boolean>(false);
-	const [prioritizeModelMappings, setPrioritizeModelMappingsState] =
+	const [forceModelMappings, setForceModelMappingsState] =
 		createSignal<boolean>(false);
 	const [savingMaxRetryInterval, setSavingMaxRetryInterval] =
 		createSignal(false);
 	const [savingWebsocketAuth, setSavingWebsocketAuth] = createSignal(false);
-	const [savingPrioritizeModelMappings, setSavingPrioritizeModelMappings] =
+	const [savingForceModelMappings, setSavingForceModelMappings] =
 		createSignal(false);
 
 	// OAuth Excluded Models state
@@ -258,8 +258,8 @@ export function SettingsPage() {
 			}
 
 			try {
-				const prioritize = await getPrioritizeModelMappings();
-				setPrioritizeModelMappingsState(prioritize);
+				const prioritize = await getForceModelMappings();
+				setForceModelMappingsState(prioritize);
 			} catch (error) {
 				console.error("Failed to fetch prioritize model mappings:", error);
 			}
@@ -327,11 +327,11 @@ export function SettingsPage() {
 	};
 
 	// Handler for prioritize model mappings toggle
-	const handlePrioritizeModelMappingsChange = async (value: boolean) => {
-		setSavingPrioritizeModelMappings(true);
+	const handleForceModelMappingsChange = async (value: boolean) => {
+		setSavingForceModelMappings(true);
 		try {
-			await setPrioritizeModelMappings(value);
-			setPrioritizeModelMappingsState(value);
+			await setForceModelMappings(value);
+			setForceModelMappingsState(value);
 			toastStore.success(
 				`Model mapping priority ${value ? "enabled" : "disabled"}`,
 				value
@@ -344,7 +344,7 @@ export function SettingsPage() {
 				String(error),
 			);
 		} finally {
-			setSavingPrioritizeModelMappings(false);
+			setSavingForceModelMappings(false);
 		}
 	};
 
@@ -1293,7 +1293,7 @@ export function SettingsPage() {
 												<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
 													Prioritize Model Mappings
 												</span>
-												<Show when={savingPrioritizeModelMappings()}>
+												<Show when={savingForceModelMappings()}>
 													<svg
 														class="w-4 h-4 animate-spin text-brand-500"
 														fill="none"
@@ -1324,15 +1324,13 @@ export function SettingsPage() {
 										<button
 											type="button"
 											role="switch"
-											aria-checked={prioritizeModelMappings()}
-											disabled={savingPrioritizeModelMappings()}
+											aria-checked={forceModelMappings()}
+											disabled={savingForceModelMappings()}
 											onClick={() =>
-												handlePrioritizeModelMappingsChange(
-													!prioritizeModelMappings(),
-												)
+												handleForceModelMappingsChange(!forceModelMappings())
 											}
 											class={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 disabled:opacity-50 ${
-												prioritizeModelMappings()
+												forceModelMappings()
 													? "bg-brand-600"
 													: "bg-gray-200 dark:bg-gray-700"
 											}`}
@@ -1340,7 +1338,7 @@ export function SettingsPage() {
 											<span
 												aria-hidden="true"
 												class={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-													prioritizeModelMappings()
+													forceModelMappings()
 														? "translate-x-5"
 														: "translate-x-0"
 												}`}
