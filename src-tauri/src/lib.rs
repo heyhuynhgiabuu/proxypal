@@ -131,6 +131,9 @@ pub struct AppConfig {
     // Window behavior: close to tray instead of quitting
     #[serde(default = "default_close_to_tray")]
     pub close_to_tray: bool,
+    // Max retry interval in seconds (synced with CLIProxyAPI)
+    #[serde(default)]
+    pub max_retry_interval: i32,
 }
 
 fn default_close_to_tray() -> bool {
@@ -269,6 +272,7 @@ impl Default for AppConfig {
             thinking_budget_custom: 16000,
             reasoning_effort_level: "medium".to_string(),
             close_to_tray: true,
+            max_retry_interval: 0,
         }
     }
 }
@@ -1240,6 +1244,15 @@ ampcode:
         .put(&force_mappings_url)
         .header("X-Management-Key", "proxypal-mgmt-key")
         .json(&serde_json::json!({"value": config.force_model_mappings}))
+        .send()
+        .await;
+    
+    // Sync max retry interval to CLIProxyAPI
+    let max_retry_url = format!("http://127.0.0.1:{}/v0/management/max-retry-interval", port);
+    let _ = client
+        .put(&max_retry_url)
+        .header("X-Management-Key", "proxypal-mgmt-key")
+        .json(&serde_json::json!({"value": config.max_retry_interval}))
         .send()
         .await;
     
@@ -5388,6 +5401,11 @@ async fn set_max_retry_interval(state: State<'_, AppState>, value: i32) -> Resul
         let text = response.text().await.unwrap_or_default();
         return Err(format!("Failed to set max retry interval: {} - {}", status, text));
     }
+    
+    // Persist to Tauri config so it survives restart
+    let mut config = state.config.lock().unwrap();
+    config.max_retry_interval = value;
+    save_config_to_file(&config).map_err(|e| format!("Failed to save config: {}", e))?;
     
     Ok(())
 }
