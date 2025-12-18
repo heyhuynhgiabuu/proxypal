@@ -790,7 +790,7 @@ export function DashboardPage() {
 	return (
 		<div class="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
 			{/* Header */}
-			<header class="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+			<header class="sticky top-0 z-10 px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
 				<div class="flex items-center justify-between max-w-3xl mx-auto">
 					<div class="flex items-center gap-2 sm:gap-3">
 						<img

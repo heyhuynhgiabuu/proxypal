@@ -164,7 +164,7 @@ export function AuthFilesPage() {
 	return (
 		<div class="min-h-screen flex flex-col">
 			{/* Header */}
-			<header class="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 dark:border-gray-800">
+			<header class="sticky top-0 z-10 px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
 				<div class="flex items-center justify-between">
 					<div class="flex items-center gap-2 sm:gap-3">
 						<Button
