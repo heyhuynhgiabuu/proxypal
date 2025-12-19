@@ -3655,8 +3655,11 @@ fn which_exists(cmd: &str) -> bool {
         // Windows detecting WSL-installed binaries
         // Only search WSL paths if WSL is actually installed and available
         // Check by seeing if wsl.exe exists and can be executed
-        let wsl_available = std::process::Command::new("wsl")
-            .arg("--status")
+        let mut wsl_cmd = std::process::Command::new("wsl");
+        wsl_cmd.arg("--status");
+        #[cfg(target_os = "windows")]
+        wsl_cmd.creation_flags(CREATE_NO_WINDOW);
+        let wsl_available = wsl_cmd
             .output()
             .map(|o| o.status.success())
             .unwrap_or(false);
