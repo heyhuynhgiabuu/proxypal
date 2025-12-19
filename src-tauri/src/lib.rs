@@ -142,6 +142,13 @@ pub struct AppConfig {
     // Max retry interval in seconds (synced with CLIProxyAPI)
     #[serde(default)]
     pub max_retry_interval: i32,
+    // Customizable proxy API key (default: proxypal-local)
+    #[serde(default = "default_proxy_api_key")]
+    pub proxy_api_key: String,
+}
+
+fn default_proxy_api_key() -> String {
+    "proxypal-local".to_string()
 }
 
 fn default_close_to_tray() -> bool {
@@ -281,6 +288,7 @@ impl Default for AppConfig {
             reasoning_effort_level: "medium".to_string(),
             close_to_tray: true,
             max_retry_interval: 0,
+            proxy_api_key: "proxypal-local".to_string(),
         }
     }
 }
@@ -1144,7 +1152,7 @@ payload:
 port: {}
 auth-dir: "~/.cli-proxy-api"
 api-keys:
-  - "proxypal-local"
+  - "{}"
 debug: {}
 usage-statistics-enabled: {}
 logging-to-file: {}
@@ -1171,6 +1179,7 @@ ampcode:
   restrict-management-to-localhost: false
 "#,
         config.port,
+        config.proxy_api_key,
         config.debug,
         config.usage_stats_enabled,
         config.logging_to_file,
