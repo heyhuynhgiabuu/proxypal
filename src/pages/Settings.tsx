@@ -3579,7 +3579,7 @@ export function SettingsPage() {
 								ProxyPal
 							</h3>
 							<p class="text-sm text-gray-500 dark:text-gray-400">
-								Version 0.1.73
+								Version 0.1.74
 							</p>
 							<p class="text-xs text-gray-400 dark:text-gray-500 mt-2">
 								Built with love by OpenCodeKit
