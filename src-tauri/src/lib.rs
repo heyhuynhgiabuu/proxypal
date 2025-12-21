@@ -1,4 +1,23 @@
-use serde::{Deserialize, Serialize};
+mod commands;
+mod config;
+mod proxy;
+mod state;
+mod types;
+mod utils;
+
+use crate::config::{AppConfig, get_auth_path, get_history_path, load_config, save_config_to_file};
+use crate::state::AppState;
+use crate::types::{
+    ProxyStatus, RequestLog, AuthStatus, OAuthState,
+    UsageStats, TimeSeriesPoint, ModelUsage, RequestHistory,
+    CopilotStatus, CopilotApiDetection, CopilotApiInstallResult,
+    ClaudeApiKey, GeminiApiKey, CodexApiKey, OpenAICompatibleProvider,
+    ThinkingBudgetSettings, ReasoningEffortSettings,
+    AuthFile, LogEntry, DetectedTool, AgentStatus,
+    AvailableModel, ProviderTestResult,
+};
+use crate::utils::{estimate_request_cost, detect_provider_from_model, detect_provider_from_path, extract_model_from_path};
+use serde::Deserialize;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -20,412 +39,6 @@ use std::os::windows::process::CommandExt;
 // Windows CREATE_NO_WINDOW flag
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
-
-// Proxy status structure
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProxyStatus {
-    pub running: bool,
-    pub port: u16,
-    pub endpoint: String,
-}
-
-// Request log entry for live monitoring
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RequestLog {
-    pub id: String,
-    pub timestamp: u64,
-    pub provider: String,
-    pub model: String,
-    pub method: String,
-    pub path: String,
-    pub status: u16,
-    pub duration_ms: u64,
-    pub tokens_in: Option<u32>,
-    pub tokens_out: Option<u32>,
-}
-
-impl Default for ProxyStatus {
-    fn default() -> Self {
-        Self {
-            running: false,
-            port: 8317,
-            endpoint: "http://localhost:8317/v1".to_string(),
-        }
-    }
-}
-
-// Auth status for different providers (count of connected accounts)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AuthStatus {
-    pub claude: u32,
-    pub openai: u32,
-    pub gemini: u32,
-    pub qwen: u32,
-    pub iflow: u32,
-    pub vertex: u32,
-    pub antigravity: u32,
-}
-
-impl Default for AuthStatus {
-    fn default() -> Self {
-        Self {
-            claude: 0,
-            openai: 0,
-            gemini: 0,
-            qwen: 0,
-            iflow: 0,
-            vertex: 0,
-            antigravity: 0,
-        }
-    }
-}
-
-// App configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AppConfig {
-    pub port: u16,
-    pub auto_start: bool,
-    pub launch_at_login: bool,
-    #[serde(default)]
-    pub debug: bool,
-    #[serde(default)]
-    pub proxy_url: String,
-    #[serde(default)]
-    pub request_retry: u16,
-    #[serde(default)]
-    pub quota_switch_project: bool,
-    #[serde(default)]
-    pub quota_switch_preview_model: bool,
-    #[serde(default = "default_usage_stats_enabled")]
-    pub usage_stats_enabled: bool,
-    #[serde(default)]
-    pub request_logging: bool,
-    #[serde(default)]
-    pub logging_to_file: bool,
-    #[serde(default = "default_logs_max_total_size_mb")]
-    pub logs_max_total_size_mb: u32,
-    #[serde(default = "default_config_version")]
-    pub config_version: u8,
-    #[serde(default)]
-    pub amp_api_key: String,
-    #[serde(default)]
-    pub amp_model_mappings: Vec<AmpModelMapping>,
-    #[serde(default)]
-    pub amp_openai_provider: Option<AmpOpenAIProvider>, // DEPRECATED: Use amp_openai_providers
-    #[serde(default)]
-    pub amp_openai_providers: Vec<AmpOpenAIProvider>, // Multiple custom OpenAI-compatible providers
-    #[serde(default)]
-    pub amp_routing_mode: String, // "mappings" or "openai" - default is "mappings"
-    #[serde(default)]
-    pub copilot: CopilotConfig,
-    // Force model mappings to take precedence over local API keys (synced with CLIProxyAPI)
-    #[serde(default)]
-    pub force_model_mappings: bool,
-    // Persisted API keys for providers (stored in config, synced to CLIProxyAPI on startup)
-    #[serde(default)]
-    pub claude_api_keys: Vec<ClaudeApiKey>,
-    #[serde(default)]
-    pub gemini_api_keys: Vec<GeminiApiKey>,
-    #[serde(default)]
-    pub codex_api_keys: Vec<CodexApiKey>,
-    // Thinking budget settings for Antigravity Claude models
-    #[serde(default)]
-    pub thinking_budget_mode: String, // "low", "medium", "high", "custom"
-    #[serde(default)]
-    pub thinking_budget_custom: u32, // Custom budget tokens when mode is "custom"
-    // Reasoning effort settings for GPT/Codex models
-    #[serde(default)]
-    pub reasoning_effort_level: String, // "none", "low", "medium", "high", "xhigh"
-    // Window behavior: close to tray instead of quitting
-    #[serde(default = "default_close_to_tray")]
-    pub close_to_tray: bool,
-    // Max retry interval in seconds (synced with CLIProxyAPI)
-    #[serde(default)]
-    pub max_retry_interval: i32,
-    // Customizable proxy API key (default: proxypal-local)
-    #[serde(default = "default_proxy_api_key")]
-    pub proxy_api_key: String,
-}
-
-fn default_proxy_api_key() -> String {
-    "proxypal-local".to_string()
-}
-
-fn default_close_to_tray() -> bool {
-    true // Default to close-to-tray behavior
-}
-
-fn default_usage_stats_enabled() -> bool {
-    true
-}
-
-fn default_logs_max_total_size_mb() -> u32 {
-    100 // Default 100MB max log size
-}
-
-fn default_config_version() -> u8 {
-    1
-}
-
-// Amp model mapping for routing requests to different models (simple mode)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AmpModelMapping {
-    pub from: String,
-    pub to: String,
-    #[serde(default = "default_enabled")]
-    pub enabled: bool,
-}
-
-fn default_enabled() -> bool {
-    true // Default to enabled for backward compatibility
-}
-
-// OpenAI-compatible provider model for Amp routing
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AmpOpenAIModel {
-    pub name: String,
-    #[serde(default)]
-    pub alias: String,
-}
-
-// OpenAI-compatible provider configuration for Amp
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AmpOpenAIProvider {
-    #[serde(default = "generate_uuid")]
-    pub id: String,
-    pub name: String,
-    pub base_url: String,
-    pub api_key: String,
-    #[serde(default)]
-    pub models: Vec<AmpOpenAIModel>,
-}
-
-fn generate_uuid() -> String {
-    uuid::Uuid::new_v4().to_string()
-}
-
-// GitHub Copilot proxy configuration (via copilot-api)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CopilotConfig {
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default = "default_copilot_port")]
-    pub port: u16,
-    #[serde(default)]
-    pub account_type: String, // "individual", "business", "enterprise"
-    #[serde(default)]
-    pub github_token: String, // Optional pre-authenticated token
-    #[serde(default)]
-    pub rate_limit: Option<u16>, // Seconds between requests
-    #[serde(default)]
-    pub rate_limit_wait: bool, // Wait instead of error on rate limit
-}
-
-fn default_copilot_port() -> u16 {
-    4141
-}
-
-impl Default for CopilotConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            port: 4141,
-            account_type: "individual".to_string(),
-            github_token: String::new(),
-            rate_limit: None,
-            rate_limit_wait: false,
-        }
-    }
-}
-
-// Copilot proxy status
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CopilotStatus {
-    pub running: bool,
-    pub port: u16,
-    pub endpoint: String,
-    pub authenticated: bool,
-}
-
-impl Default for CopilotStatus {
-    fn default() -> Self {
-        Self {
-            running: false,
-            port: 4141,
-            endpoint: "http://localhost:4141".to_string(),
-            authenticated: false,
-        }
-    }
-}
-
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            port: 8317,
-            auto_start: true,
-            launch_at_login: false,
-            debug: false,
-            proxy_url: String::new(),
-            request_retry: 0,
-            quota_switch_project: false,
-            quota_switch_preview_model: false,
-            usage_stats_enabled: true,
-            request_logging: true,
-            logging_to_file: true,
-            logs_max_total_size_mb: 100,
-            config_version: 1,
-            amp_api_key: String::new(),
-            amp_model_mappings: Vec::new(),
-            amp_openai_provider: None,
-            amp_openai_providers: Vec::new(),
-            amp_routing_mode: "mappings".to_string(),
-            copilot: CopilotConfig::default(),
-            force_model_mappings: false,
-            claude_api_keys: Vec::new(),
-            gemini_api_keys: Vec::new(),
-            codex_api_keys: Vec::new(),
-            thinking_budget_mode: "medium".to_string(),
-            thinking_budget_custom: 16000,
-            reasoning_effort_level: "medium".to_string(),
-            close_to_tray: true,
-            max_retry_interval: 0,
-            proxy_api_key: "proxypal-local".to_string(),
-        }
-    }
-}
-
-
-// OAuth state for tracking pending auth flows
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OAuthState {
-    pub provider: String,
-    pub state: String,
-}
-
-// Usage statistics from Management API
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct UsageStats {
-    pub total_requests: u64,
-    pub success_count: u64,
-    pub failure_count: u64,
-    pub total_tokens: u64,
-    pub input_tokens: u64,
-    pub output_tokens: u64,
-    pub requests_today: u64,
-    pub tokens_today: u64,
-    #[serde(default)]
-    pub models: Vec<ModelUsage>,
-    /// Time-series data for charts
-    #[serde(default)]
-    pub requests_by_day: Vec<TimeSeriesPoint>,
-    #[serde(default)]
-    pub tokens_by_day: Vec<TimeSeriesPoint>,
-    #[serde(default)]
-    pub requests_by_hour: Vec<TimeSeriesPoint>,
-    #[serde(default)]
-    pub tokens_by_hour: Vec<TimeSeriesPoint>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TimeSeriesPoint {
-    pub label: String,
-    pub value: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ModelUsage {
-    pub model: String,
-    pub requests: u64,
-    pub tokens: u64,
-}
-
-// App state
-pub struct AppState {
-    pub proxy_status: Mutex<ProxyStatus>,
-    pub auth_status: Mutex<AuthStatus>,
-    pub config: Mutex<AppConfig>,
-    pub pending_oauth: Mutex<Option<OAuthState>>,
-    pub proxy_process: Mutex<Option<CommandChild>>,
-    pub copilot_status: Mutex<CopilotStatus>,
-    pub copilot_process: Mutex<Option<CommandChild>>,
-    pub log_watcher_running: Arc<AtomicBool>,
-    pub request_counter: Arc<AtomicU64>,
-}
-
-impl Default for AppState {
-    fn default() -> Self {
-        Self {
-            proxy_status: Mutex::new(ProxyStatus::default()),
-            auth_status: Mutex::new(AuthStatus::default()),
-            config: Mutex::new(AppConfig::default()),
-            pending_oauth: Mutex::new(None),
-            proxy_process: Mutex::new(None),
-            copilot_status: Mutex::new(CopilotStatus::default()),
-            copilot_process: Mutex::new(None),
-            log_watcher_running: Arc::new(AtomicBool::new(false)),
-            request_counter: Arc::new(AtomicU64::new(0)),
-        }
-    }
-}
-
-// Get the proxypal config directory, creating it if needed with proper error logging
-fn get_proxypal_config_dir() -> std::path::PathBuf {
-    let config_dir = dirs::config_dir()
-        .unwrap_or_else(|| {
-            eprintln!("[ProxyPal] Warning: Could not determine config directory, using current directory");
-            std::path::PathBuf::from(".")
-        })
-        .join("proxypal");
-    
-    if let Err(e) = std::fs::create_dir_all(&config_dir) {
-        eprintln!(
-            "[ProxyPal] Error: Failed to create config directory '{}': {}",
-            config_dir.display(),
-            e
-        );
-        eprintln!("[ProxyPal] Usage statistics and settings may not persist correctly.");
-        eprintln!("[ProxyPal] Please ensure the app has write permissions to ~/Library/Application Support/proxypal/");
-    }
-    
-    config_dir
-}
-
-// Config file path
-fn get_config_path() -> std::path::PathBuf {
-    get_proxypal_config_dir().join("config.json")
-}
-
-fn get_auth_path() -> std::path::PathBuf {
-    get_proxypal_config_dir().join("auth.json")
-}
-
-fn get_history_path() -> std::path::PathBuf {
-    get_proxypal_config_dir().join("history.json")
-}
-
-// Request history with metadata
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct RequestHistory {
-    pub requests: Vec<RequestLog>,
-    pub total_tokens_in: u64,
-    pub total_tokens_out: u64,
-    pub total_cost_usd: f64,
-    /// Token time-series data synced from CLIProxyAPI
-    #[serde(default)]
-    pub tokens_by_day: Vec<TimeSeriesPoint>,
-    #[serde(default)]
-    pub tokens_by_hour: Vec<TimeSeriesPoint>,
-}
 
 // Load request history from file
 fn load_request_history() -> RequestHistory {
@@ -452,71 +65,6 @@ fn save_request_history(history: &RequestHistory) -> Result<(), String> {
     std::fs::write(path, data).map_err(|e| e.to_string())
 }
 
-// Estimate cost based on model and tokens
-fn estimate_request_cost(model: &str, tokens_in: u32, tokens_out: u32) -> f64 {
-    // Pricing per 1M tokens (input, output) - approximate as of 2024
-    // Using broader patterns to match all model versions (3.x, 4.x, 4.5, 5.x, etc.)
-    let (input_rate, output_rate) = match model.to_lowercase().as_str() {
-        // Claude models - broader patterns to match all versions (3.x, 4.x, 4.5, etc.)
-        m if m.contains("claude") && m.contains("opus") => (15.0, 75.0),
-        m if m.contains("claude") && m.contains("sonnet") => (3.0, 15.0),
-        m if m.contains("claude") && m.contains("haiku") => (0.25, 1.25),
-        // GPT models - check newer versions first
-        m if m.contains("gpt-5") => (15.0, 45.0), // GPT-5 estimated pricing
-        m if m.contains("gpt-4o") => (2.5, 10.0),
-        m if m.contains("gpt-4-turbo") || m.contains("gpt-4") => (10.0, 30.0),
-        m if m.contains("gpt-3.5") => (0.5, 1.5),
-        // Gemini models - broader patterns for all 2.x versions
-        m if m.contains("gemini") && m.contains("pro") => (1.25, 5.0),
-        m if m.contains("gemini") && m.contains("flash") => (0.075, 0.30),
-        m if m.contains("gemini-2") => (0.10, 0.40),
-        m if m.contains("qwen") => (0.50, 2.0),
-        _ => (1.0, 3.0), // Default conservative estimate
-    };
-    
-    let input_cost = (tokens_in as f64 / 1_000_000.0) * input_rate;
-    let output_cost = (tokens_out as f64 / 1_000_000.0) * output_rate;
-    input_cost + output_cost
-}
-
-// Load config from file
-fn load_config() -> AppConfig {
-    let path = get_config_path();
-    if path.exists() {
-        if let Ok(data) = std::fs::read_to_string(&path) {
-            if let Ok(mut config) = serde_json::from_str::<AppConfig>(&data) {
-                // Migration: Convert deprecated amp_openai_provider to amp_openai_providers array
-                if let Some(old_provider) = config.amp_openai_provider.take() {
-                    // Only migrate if the new array is empty (first-time migration)
-                    if config.amp_openai_providers.is_empty() {
-                        // Ensure the migrated provider has an ID
-                        let provider_with_id = if old_provider.id.is_empty() {
-                            AmpOpenAIProvider {
-                                id: generate_uuid(),
-                                ..old_provider
-                            }
-                        } else {
-                            old_provider
-                        };
-                        config.amp_openai_providers.push(provider_with_id);
-                        // Save the migrated config
-                        let _ = save_config_to_file(&config);
-                    }
-                }
-                return config;
-            }
-        }
-    }
-    AppConfig::default()
-}
-
-// Save config to file
-fn save_config_to_file(config: &AppConfig) -> Result<(), String> {
-    let path = get_config_path();
-    let data = serde_json::to_string_pretty(config).map_err(|e| e.to_string())?;
-    std::fs::write(path, data).map_err(|e| e.to_string())
-}
-
 // Load auth status from file
 fn load_auth_status() -> AuthStatus {
     let path = get_auth_path();
@@ -535,101 +83,6 @@ fn save_auth_to_file(auth: &AuthStatus) -> Result<(), String> {
     let path = get_auth_path();
     let data = serde_json::to_string_pretty(auth).map_err(|e| e.to_string())?;
     std::fs::write(path, data).map_err(|e| e.to_string())
-}
-
-// Detect provider from model name
-fn detect_provider_from_model(model: &str) -> String {
-    let model_lower = model.to_lowercase();
-    
-    if model_lower.contains("claude") || model_lower.contains("sonnet") || 
-       model_lower.contains("opus") || model_lower.contains("haiku") {
-        return "claude".to_string();
-    }
-    if model_lower.contains("gpt") || model_lower.contains("codex") || 
-       model_lower.starts_with("o3") || model_lower.starts_with("o1") {
-        return "openai".to_string();
-    }
-    if model_lower.contains("gemini") {
-        return "gemini".to_string();
-    }
-    if model_lower.contains("qwen") {
-        return "qwen".to_string();
-    }
-    if model_lower.contains("deepseek") {
-        return "deepseek".to_string();
-    }
-    if model_lower.contains("glm") {
-        return "zhipu".to_string();
-    }
-    
-    if model_lower.contains("antigravity") {
-        return "antigravity".to_string();
-    }
-    
-    "unknown".to_string()
-}
-
-// Extract provider from Amp-style API path
-// e.g., "/api/provider/anthropic/v1/messages" -> "claude"
-// e.g., "/api/provider/openai/v1/chat/completions" -> "openai"
-// Also handles standard paths: /v1/messages -> claude, /v1/chat/completions -> openai-compat
-fn detect_provider_from_path(path: &str) -> Option<String> {
-    // First try Amp-style path
-    if path.contains("/api/provider/") {
-        let parts: Vec<&str> = path.split('/').collect();
-        // Path format: /api/provider/{provider}/...
-        if let Some(idx) = parts.iter().position(|&p| p == "provider") {
-            if let Some(provider) = parts.get(idx + 1) {
-                return Some(match *provider {
-                    "anthropic" => "claude".to_string(),
-                    "openai" => "openai".to_string(),
-                    "google" => "gemini".to_string(),
-                    p => p.to_string(),
-                });
-            }
-        }
-    }
-    
-    // Fallback: infer from standard endpoint paths
-    if path.contains("/v1/messages") || path.contains("/messages") {
-        return Some("claude".to_string());
-    }
-    if path.contains("/v1/chat/completions") || path.contains("/chat/completions") {
-        // Could be OpenAI, Gemini, etc. - mark as openai-compat
-        return Some("openai-compat".to_string());
-    }
-    if path.contains("/v1beta") || path.contains(":generateContent") || path.contains(":streamGenerateContent") {
-        return Some("gemini".to_string());
-    }
-    
-    None
-}
-
-// Extract model from API path
-// For Gemini: "/api/provider/google/v1beta1/publishers/google/models/gemini-2.5-pro:streamGenerateContent"
-// For Claude/OpenAI: model is in request body, so we return empty to let the UI use provider name
-fn extract_model_from_path(path: &str) -> Option<String> {
-    // First try Gemini-style path with /models/{model-name}
-    if path.contains("/models/") {
-        if let Some(idx) = path.find("/models/") {
-            let model_part = &path[idx + 8..]; // Skip "/models/"
-            // Model may end with :action (e.g., ":generateContent")
-            let model = if let Some(colon_idx) = model_part.find(':') {
-                &model_part[..colon_idx]
-            } else if let Some(slash_idx) = model_part.find('/') {
-                &model_part[..slash_idx]
-            } else {
-                model_part
-            };
-            if !model.is_empty() {
-                return Some(model.to_string());
-            }
-        }
-    }
-    
-    // For Claude/OpenAI, model is in request body - we can't extract it from URL
-    // Return None to let UI show provider-based display
-    None
 }
 
 // Parse a GIN log line and extract request information
@@ -1801,23 +1254,6 @@ async fn check_copilot_health(state: State<'_, AppState>) -> Result<CopilotStatu
     Ok(new_status)
 }
 
-// Detection result for copilot-api installation
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CopilotApiDetection {
-    pub installed: bool,
-    pub version: Option<String>,
-    pub copilot_bin: Option<String>,  // Path to copilot-api binary (if installed)
-    pub npx_bin: Option<String>,      // Path to npx binary (for fallback)
-    pub npm_bin: Option<String>,      // Path to npm binary (for installs)
-    pub node_bin: Option<String>,     // Path to node binary actually used
-    pub node_version: Option<String>, // Node.js version (e.g., "v20.16.0")
-    pub bunx_bin: Option<String>,     // Path to bunx binary (preferred over npx)
-    pub node_available: bool,
-    pub checked_node_paths: Vec<String>,
-    pub checked_copilot_paths: Vec<String>,
-}
-
 #[tauri::command]
 async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetection, String> {
     // Common Node.js installation paths on macOS/Linux
@@ -2187,14 +1623,6 @@ async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetection
         checked_node_paths: node_paths,
         checked_copilot_paths: copilot_paths,
     })
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CopilotApiInstallResult {
-    pub success: bool,
-    pub message: String,
-    pub version: Option<String>,
 }
 
 #[tauri::command]
@@ -2930,216 +2358,6 @@ async fn import_vertex_credential(
     Ok(auth.clone())
 }
 
-#[tauri::command]
-fn get_config(state: State<AppState>) -> AppConfig {
-    state.config.lock().unwrap().clone()
-}
-
-#[tauri::command]
-fn save_config(state: State<AppState>, config: AppConfig) -> Result<(), String> {
-    let mut current_config = state.config.lock().unwrap();
-    *current_config = config.clone();
-    save_config_to_file(&config)
-}
-
-// Provider health status
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProviderHealth {
-    pub claude: HealthStatus,
-    pub openai: HealthStatus,
-    pub gemini: HealthStatus,
-    pub qwen: HealthStatus,
-    pub iflow: HealthStatus,
-    pub vertex: HealthStatus,
-    pub antigravity: HealthStatus,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HealthStatus {
-    pub status: String,  // "healthy", "degraded", "offline", "unconfigured"
-    pub latency_ms: Option<u64>,
-    pub last_checked: u64,
-}
-
-impl Default for HealthStatus {
-    fn default() -> Self {
-        Self {
-            status: "unconfigured".to_string(),
-            latency_ms: None,
-            last_checked: 0,
-        }
-    }
-}
-
-#[tauri::command]
-async fn check_provider_health(state: State<'_, AppState>) -> Result<ProviderHealth, String> {
-    let config = state.config.lock().unwrap().clone();
-    let auth = state.auth_status.lock().unwrap().clone();
-    let proxy_running = state.proxy_status.lock().unwrap().running;
-    
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-    
-    // If proxy isn't running, all providers are offline
-    if !proxy_running {
-        return Ok(ProviderHealth {
-            claude: HealthStatus { status: "offline".to_string(), latency_ms: None, last_checked: timestamp },
-            openai: HealthStatus { status: "offline".to_string(), latency_ms: None, last_checked: timestamp },
-            gemini: HealthStatus { status: "offline".to_string(), latency_ms: None, last_checked: timestamp },
-            qwen: HealthStatus { status: "offline".to_string(), latency_ms: None, last_checked: timestamp },
-            iflow: HealthStatus { status: "offline".to_string(), latency_ms: None, last_checked: timestamp },
-            vertex: HealthStatus { status: "offline".to_string(), latency_ms: None, last_checked: timestamp },
-            antigravity: HealthStatus { status: "offline".to_string(), latency_ms: None, last_checked: timestamp },
-        });
-    }
-    
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .map_err(|e| e.to_string())?;
-    
-    let endpoint = format!("http://localhost:{}/v1/models", config.port);
-    
-    // Check proxy health by requesting models endpoint
-    let start = std::time::Instant::now();
-    let response = client.get(&endpoint)
-        .header("Authorization", "Bearer proxypal-local")
-        .send()
-        .await;
-    let latency = start.elapsed().as_millis() as u64;
-    
-    let proxy_healthy = response.map(|r| r.status().is_success()).unwrap_or(false);
-    
-    Ok(ProviderHealth {
-        claude: if auth.claude > 0 && proxy_healthy {
-            HealthStatus { status: "healthy".to_string(), latency_ms: Some(latency), last_checked: timestamp }
-        } else if auth.claude > 0 {
-            HealthStatus { status: "degraded".to_string(), latency_ms: None, last_checked: timestamp }
-        } else {
-            HealthStatus { status: "unconfigured".to_string(), latency_ms: None, last_checked: timestamp }
-        },
-        openai: if auth.openai > 0 && proxy_healthy {
-            HealthStatus { status: "healthy".to_string(), latency_ms: Some(latency), last_checked: timestamp }
-        } else if auth.openai > 0 {
-            HealthStatus { status: "degraded".to_string(), latency_ms: None, last_checked: timestamp }
-        } else {
-            HealthStatus { status: "unconfigured".to_string(), latency_ms: None, last_checked: timestamp }
-        },
-        gemini: if auth.gemini > 0 && proxy_healthy {
-            HealthStatus { status: "healthy".to_string(), latency_ms: Some(latency), last_checked: timestamp }
-        } else if auth.gemini > 0 {
-            HealthStatus { status: "degraded".to_string(), latency_ms: None, last_checked: timestamp }
-        } else {
-            HealthStatus { status: "unconfigured".to_string(), latency_ms: None, last_checked: timestamp }
-        },
-        qwen: if auth.qwen > 0 && proxy_healthy {
-            HealthStatus { status: "healthy".to_string(), latency_ms: Some(latency), last_checked: timestamp }
-        } else if auth.qwen > 0 {
-            HealthStatus { status: "degraded".to_string(), latency_ms: None, last_checked: timestamp }
-        } else {
-            HealthStatus { status: "unconfigured".to_string(), latency_ms: None, last_checked: timestamp }
-        },
-        iflow: if auth.iflow > 0 && proxy_healthy {
-            HealthStatus { status: "healthy".to_string(), latency_ms: Some(latency), last_checked: timestamp }
-        } else if auth.iflow > 0 {
-            HealthStatus { status: "degraded".to_string(), latency_ms: None, last_checked: timestamp }
-        } else {
-            HealthStatus { status: "unconfigured".to_string(), latency_ms: None, last_checked: timestamp }
-        },
-        vertex: if auth.vertex > 0 && proxy_healthy {
-            HealthStatus { status: "healthy".to_string(), latency_ms: Some(latency), last_checked: timestamp }
-        } else if auth.vertex > 0 {
-            HealthStatus { status: "degraded".to_string(), latency_ms: None, last_checked: timestamp }
-        } else {
-            HealthStatus { status: "unconfigured".to_string(), latency_ms: None, last_checked: timestamp }
-        },
-        antigravity: if auth.antigravity > 0 && proxy_healthy {
-            HealthStatus { status: "healthy".to_string(), latency_ms: Some(latency), last_checked: timestamp }
-        } else if auth.antigravity > 0 {
-            HealthStatus { status: "degraded".to_string(), latency_ms: None, last_checked: timestamp }
-        } else {
-            HealthStatus { status: "unconfigured".to_string(), latency_ms: None, last_checked: timestamp }
-        },
-    })
-}
-
-// Test agent connection by making a simple API call through the proxy
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentTestResult {
-    pub success: bool,
-    pub message: String,
-    pub latency_ms: Option<u64>,
-}
-
-#[tauri::command]
-async fn test_agent_connection(state: State<'_, AppState>, agent_id: String) -> Result<AgentTestResult, String> {
-    let config = state.config.lock().unwrap().clone();
-    let proxy_running = state.proxy_status.lock().unwrap().running;
-    
-    if !proxy_running {
-        return Ok(AgentTestResult {
-            success: false,
-            message: "Proxy is not running".to_string(),
-            latency_ms: None,
-        });
-    }
-    
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .map_err(|e| e.to_string())?;
-    
-    // Use /v1/models endpoint for testing - lightweight and doesn't consume tokens
-    let endpoint = format!("http://localhost:{}/v1/models", config.port);
-    
-    let start = std::time::Instant::now();
-    let response = client.get(&endpoint)
-        .header("Authorization", "Bearer proxypal-local")
-        .send()
-        .await;
-    let latency = start.elapsed().as_millis() as u64;
-    
-    match response {
-        Ok(resp) => {
-            if resp.status().is_success() {
-                Ok(AgentTestResult {
-                    success: true,
-                    message: format!("Connection successful! {} is ready to use.", agent_id),
-                    latency_ms: Some(latency),
-                })
-            } else {
-                Ok(AgentTestResult {
-                    success: false,
-                    message: format!("Proxy returned status {}", resp.status()),
-                    latency_ms: Some(latency),
-                })
-            }
-        }
-        Err(e) => {
-            Ok(AgentTestResult {
-                success: false,
-                message: format!("Connection failed: {}", e),
-                latency_ms: None,
-            })
-        }
-    }
-}
-
-// Get available models from CLIProxyAPI /v1/models endpoint
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AvailableModel {
-    pub id: String,
-    pub owned_by: String,
-    /// Source of the model: "gemini-api", "vertex", "copilot", "api-key", "oauth", etc.
-    /// Used to distinguish between different authentication sources for the same provider
-    #[serde(default)]
-    pub source: String,
-}
-
 #[derive(Debug, Deserialize)]
 struct ModelsApiResponse {
     data: Vec<ModelsApiModel>,
@@ -3244,16 +2462,6 @@ async fn get_available_models(state: State<'_, AppState>) -> Result<Vec<Availabl
         .collect();
     
     Ok(models)
-}
-
-// Test connection to a custom OpenAI-compatible provider
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProviderTestResult {
-    pub success: bool,
-    pub message: String,
-    pub latency_ms: Option<u64>,
-    pub models_found: Option<u32>,
 }
 
 #[tauri::command]
@@ -3439,32 +2647,6 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .build(app)?;
 
     Ok(())
-}
-
-// Detected AI coding tool
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DetectedTool {
-    pub id: String,
-    pub name: String,
-    pub installed: bool,
-    pub config_path: Option<String>,
-    pub can_auto_configure: bool,
-}
-
-// CLI Agent configuration status
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentStatus {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub installed: bool,
-    pub configured: bool,
-    pub config_type: String,  // "env", "file", "both"
-    pub config_path: Option<String>,
-    pub logo: String,
-    pub docs_url: String,
 }
 
 // Detect installed CLI agents
@@ -4629,78 +3811,6 @@ models:
 // API Keys Management - CRUD operations via Management API
 // ============================================
 
-// API Key types matching Management API schema
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GeminiApiKey {
-    pub api_key: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub base_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub proxy_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub headers: Option<std::collections::HashMap<String, String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub excluded_models: Option<Vec<String>>,
-}
-
-// Model mapping with alias and name (used by Claude and OpenAI-compatible providers)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ModelMapping {
-    pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub alias: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ClaudeApiKey {
-    pub api_key: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub base_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub proxy_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub headers: Option<std::collections::HashMap<String, String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub models: Option<Vec<ModelMapping>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub excluded_models: Option<Vec<String>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CodexApiKey {
-    pub api_key: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub base_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub proxy_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub headers: Option<std::collections::HashMap<String, String>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OpenAICompatibleApiKeyEntry {
-    pub api_key: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub proxy_url: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OpenAICompatibleProvider {
-    pub name: String,
-    pub base_url: String,
-    pub api_key_entries: Vec<OpenAICompatibleApiKeyEntry>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub models: Option<Vec<ModelMapping>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub headers: Option<std::collections::HashMap<String, String>>,
-}
-
 // Helper to build HTTP client for Management API
 fn build_management_client() -> reqwest::Client {
     reqwest::Client::builder()
@@ -4973,34 +4083,6 @@ async fn delete_codex_api_key(state: State<'_, AppState>, index: usize) -> Resul
 // Thinking Budget Settings
 // ============================================
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ThinkingBudgetSettings {
-    pub mode: String,        // "low", "medium", "high", "custom"
-    pub custom_budget: u32,  // Custom budget tokens when mode is "custom"
-}
-
-impl Default for ThinkingBudgetSettings {
-    fn default() -> Self {
-        Self {
-            mode: "medium".to_string(),
-            custom_budget: 16000,
-        }
-    }
-}
-
-impl ThinkingBudgetSettings {
-    pub fn get_budget_tokens(&self) -> u32 {
-        match self.mode.as_str() {
-            "low" => 2048,
-            "medium" => 8192,
-            "high" => 32768,
-            "custom" => self.custom_budget,
-            _ => 8192, // default to medium
-        }
-    }
-}
-
 #[tauri::command]
 async fn get_thinking_budget_settings(state: State<'_, AppState>) -> Result<ThinkingBudgetSettings, String> {
     let config = state.config.lock().unwrap();
@@ -5028,7 +4110,7 @@ async fn set_thinking_budget_settings(state: State<'_, AppState>, settings: Thin
         let config = state.config.lock().unwrap();
         config.clone()
     };
-    save_config(state, config_to_save)?;
+    crate::commands::config::save_config(state, config_to_save)?;
     
     // Config is saved - proxy will pick up new thinking budget on next request
     
@@ -5038,20 +4120,6 @@ async fn set_thinking_budget_settings(state: State<'_, AppState>, settings: Thin
 // ============================================
 // Reasoning Effort Settings (GPT/Codex models)
 // ============================================
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ReasoningEffortSettings {
-    pub level: String, // "none", "low", "medium", "high", "xhigh"
-}
-
-impl Default for ReasoningEffortSettings {
-    fn default() -> Self {
-        Self {
-            level: "medium".to_string(),
-        }
-    }
-}
 
 #[tauri::command]
 async fn get_reasoning_effort_settings(state: State<'_, AppState>) -> Result<ReasoningEffortSettings, String> {
@@ -5080,7 +4148,7 @@ async fn set_reasoning_effort_settings(state: State<'_, AppState>, settings: Rea
         let config = state.config.lock().unwrap();
         config.clone()
     };
-    save_config(state, config_to_save)?;
+    crate::commands::config::save_config(state, config_to_save)?;
     
     Ok(())
 }
@@ -5105,7 +4173,7 @@ async fn set_close_to_tray(state: State<'_, AppState>, enabled: bool) -> Result<
         let config = state.config.lock().unwrap();
         config.clone()
     };
-    save_config(state, config_to_save)?;
+    crate::commands::config::save_config(state, config_to_save)?;
     Ok(())
 }
 
@@ -5176,50 +4244,6 @@ async fn delete_openai_compatible_provider(state: State<'_, AppState>, index: us
 // ============================================
 // Auth Files Management - via Management API
 // ============================================
-
-// Auth file entry from Management API
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AuthFile {
-    pub id: String,
-    pub name: String,
-    pub provider: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub label: Option<String>,
-    pub status: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub status_message: Option<String>,
-    #[serde(default)]
-    pub disabled: bool,
-    #[serde(default)]
-    pub unavailable: bool,
-    #[serde(default)]
-    pub runtime_only: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub source: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub path: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub size: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub modtime: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub email: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub account_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub account: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub created_at: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub updated_at: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_refresh: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub success_count: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub failure_count: Option<u64>,
-}
 
 // Get all auth files
 #[tauri::command]
@@ -5565,314 +4589,6 @@ async fn set_force_model_mappings(state: State<'_, AppState>, value: bool) -> Re
     save_config_to_file(&config).map_err(|e| format!("Failed to save config: {}", e))?;
     
     Ok(())
-}
-
-// Claude Code settings struct
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ClaudeCodeSettings {
-    pub haiku_model: Option<String>,
-    pub opus_model: Option<String>,
-    pub sonnet_model: Option<String>,
-    pub base_url: Option<String>,
-    pub auth_token: Option<String>,
-}
-
-// Get Claude Code model settings from ~/.claude/settings.json
-#[tauri::command]
-fn get_claude_code_settings() -> Result<ClaudeCodeSettings, String> {
-    let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    let settings_path = home.join(".claude").join("settings.json");
-    
-    if !settings_path.exists() {
-        return Ok(ClaudeCodeSettings {
-            haiku_model: None,
-            opus_model: None,
-            sonnet_model: None,
-            base_url: None,
-            auth_token: None,
-        });
-    }
-    
-    let content = std::fs::read_to_string(&settings_path)
-        .map_err(|e| format!("Failed to read Claude settings: {}", e))?;
-    
-    let json: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse Claude settings: {}", e))?;
-    
-    let env = json.get("env").and_then(|v| v.as_object());
-    
-    Ok(ClaudeCodeSettings {
-        haiku_model: env.and_then(|e| e.get("ANTHROPIC_DEFAULT_HAIKU_MODEL")).and_then(|v| v.as_str()).map(|s| s.to_string()),
-        opus_model: env.and_then(|e| e.get("ANTHROPIC_DEFAULT_OPUS_MODEL")).and_then(|v| v.as_str()).map(|s| s.to_string()),
-        sonnet_model: env.and_then(|e| e.get("ANTHROPIC_DEFAULT_SONNET_MODEL")).and_then(|v| v.as_str()).map(|s| s.to_string()),
-        base_url: env.and_then(|e| e.get("ANTHROPIC_BASE_URL")).and_then(|v| v.as_str()).map(|s| s.to_string()),
-        auth_token: env.and_then(|e| e.get("ANTHROPIC_AUTH_TOKEN")).and_then(|v| v.as_str()).map(|s| s.to_string()),
-    })
-}
-
-// Set Claude Code model mapping
-#[tauri::command]
-fn set_claude_code_model(model_type: String, model_name: String) -> Result<(), String> {
-    let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    let claude_dir = home.join(".claude");
-    let settings_path = claude_dir.join("settings.json");
-    
-    // Ensure .claude directory exists
-    std::fs::create_dir_all(&claude_dir)
-        .map_err(|e| format!("Failed to create .claude directory: {}", e))?;
-    
-    // Read existing settings or create new
-    let mut json: serde_json::Value = if settings_path.exists() {
-        let content = std::fs::read_to_string(&settings_path)
-            .map_err(|e| format!("Failed to read Claude settings: {}", e))?;
-        serde_json::from_str(&content).unwrap_or(serde_json::json!({}))
-    } else {
-        serde_json::json!({})
-    };
-    
-    // Ensure env object exists
-    if json.get("env").is_none() {
-        json["env"] = serde_json::json!({});
-    }
-    
-    // Map model_type to env key
-    let env_key = match model_type.as_str() {
-        "haiku" => "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-        "opus" => "ANTHROPIC_DEFAULT_OPUS_MODEL",
-        "sonnet" => "ANTHROPIC_DEFAULT_SONNET_MODEL",
-        _ => return Err(format!("Unknown model type: {}", model_type)),
-    };
-    
-    // Set the model
-    json["env"][env_key] = serde_json::Value::String(model_name);
-    
-    // Write back
-    let content = serde_json::to_string_pretty(&json)
-        .map_err(|e| format!("Failed to serialize Claude settings: {}", e))?;
-    std::fs::write(&settings_path, content)
-        .map_err(|e| format!("Failed to write Claude settings: {}", e))?;
-    
-    Ok(())
-}
-
-// Get OAuth excluded models from Management API
-#[tauri::command]
-async fn get_oauth_excluded_models(state: State<'_, AppState>) -> Result<std::collections::HashMap<String, Vec<String>>, String> {
-    let port = state.config.lock().unwrap().port;
-    let url = get_management_url(port, "oauth-excluded-models");
-    
-    let client = build_management_client();
-    let response = client
-        .get(&url)
-        .header("X-Management-Key", "proxypal-mgmt-key")
-        .send()
-        .await
-        .map_err(|e| format!("Failed to get OAuth excluded models: {}", e))?;
-    
-    if !response.status().is_success() {
-        return Ok(std::collections::HashMap::new());
-    }
-    
-    let json: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
-    
-    // Response format: { "oauth-excluded-models": { "gemini": ["model1", "model2"], ... } }
-    if let Some(models) = json.get("oauth-excluded-models") {
-        if let Some(obj) = models.as_object() {
-            let mut result = std::collections::HashMap::new();
-            for (key, val) in obj {
-                if let Some(arr) = val.as_array() {
-                    let models: Vec<String> = arr
-                        .iter()
-                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                        .collect();
-                    result.insert(key.clone(), models);
-                }
-            }
-            return Ok(result);
-        }
-    }
-    
-    Ok(std::collections::HashMap::new())
-}
-
-// Set OAuth excluded models for a provider via Management API
-#[tauri::command]
-async fn set_oauth_excluded_models(
-    state: State<'_, AppState>,
-    provider: String,
-    models: Vec<String>,
-) -> Result<(), String> {
-    let port = state.config.lock().unwrap().port;
-    let url = get_management_url(port, "oauth-excluded-models");
-    
-    let client = build_management_client();
-    
-    // CLIProxyAPI expects: { "provider": "anthropic", "models": ["model1", "model2"] }
-    let body = serde_json::json!({
-        "provider": provider,
-        "models": models
-    });
-    
-    let response = client
-        .patch(&url)
-        .header("X-Management-Key", "proxypal-mgmt-key")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("Failed to set OAuth excluded models: {}", e))?;
-    
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        return Err(format!("Failed to set OAuth excluded models: {} - {}", status, text));
-    }
-    
-    Ok(())
-}
-
-// Delete OAuth excluded models for a provider via Management API
-#[tauri::command]
-async fn delete_oauth_excluded_models(
-    state: State<'_, AppState>,
-    provider: String,
-) -> Result<(), String> {
-    let port = state.config.lock().unwrap().port;
-    let url = format!("{}?provider={}", get_management_url(port, "oauth-excluded-models"), provider);
-    
-    let client = build_management_client();
-    let response = client
-        .delete(&url)
-        .header("X-Management-Key", "proxypal-mgmt-key")
-        .send()
-        .await
-        .map_err(|e| format!("Failed to delete OAuth excluded models: {}", e))?;
-    
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        return Err(format!("Failed to delete OAuth excluded models: {} - {}", status, text));
-    }
-    
-    Ok(())
-}
-
-// Get raw config YAML from Management API
-#[tauri::command]
-async fn get_config_yaml(state: State<'_, AppState>) -> Result<String, String> {
-    let port = state.config.lock().unwrap().port;
-    let url = get_management_url(port, "config.yaml");
-    
-    let client = build_management_client();
-    let response = client
-        .get(&url)
-        .header("X-Management-Key", "proxypal-mgmt-key")
-        .send()
-        .await
-        .map_err(|e| format!("Failed to get config YAML: {}", e))?;
-    
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        return Err(format!("Failed to get config YAML: {} - {}", status, text));
-    }
-    
-    response.text().await.map_err(|e| e.to_string())
-}
-
-// Set raw config YAML via Management API
-#[tauri::command]
-async fn set_config_yaml(state: State<'_, AppState>, yaml: String) -> Result<(), String> {
-    let port = state.config.lock().unwrap().port;
-    let url = get_management_url(port, "config.yaml");
-    
-    let client = build_management_client();
-    let response = client
-        .put(&url)
-        .header("X-Management-Key", "proxypal-mgmt-key")
-        .header("Content-Type", "application/yaml")
-        .body(yaml)
-        .send()
-        .await
-        .map_err(|e| format!("Failed to set config YAML: {}", e))?;
-    
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        return Err(format!("Failed to set config YAML: {} - {}", status, text));
-    }
-    
-    Ok(())
-}
-
-// Get request error logs from Management API
-#[tauri::command]
-async fn get_request_error_logs(state: State<'_, AppState>) -> Result<Vec<String>, String> {
-    let port = state.config.lock().unwrap().port;
-    let url = get_management_url(port, "request-error-logs");
-    
-    let client = build_management_client();
-    let response = client
-        .get(&url)
-        .header("X-Management-Key", "proxypal-mgmt-key")
-        .send()
-        .await
-        .map_err(|e| format!("Failed to get request error logs: {}", e))?;
-    
-    if !response.status().is_success() {
-        return Ok(Vec::new());
-    }
-    
-    let json: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
-    
-    // Response format: { "files": ["error_2025-01-01.log", ...] }
-    if let Some(files) = json.get("files") {
-        if let Some(arr) = files.as_array() {
-            let result: Vec<String> = arr
-                .iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect();
-            return Ok(result);
-        }
-    }
-    
-    Ok(Vec::new())
-}
-
-// Get content of a specific request error log file
-#[tauri::command]
-async fn get_request_error_log_content(state: State<'_, AppState>, filename: String) -> Result<String, String> {
-    let port = state.config.lock().unwrap().port;
-    let url = format!("{}/{}", get_management_url(port, "request-error-logs"), filename);
-    
-    let client = build_management_client();
-    let response = client
-        .get(&url)
-        .header("X-Management-Key", "proxypal-mgmt-key")
-        .send()
-        .await
-        .map_err(|e| format!("Failed to get error log content: {}", e))?;
-    
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        return Err(format!("Failed to get error log content: {} - {}", status, text));
-    }
-    
-    response.text().await.map_err(|e| e.to_string())
-}
-
-// ============================================================================
-// Log Viewer Commands
-// ============================================================================
-
-// Log entry structure
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LogEntry {
-    pub timestamp: String,
-    pub level: String,
-    pub message: String,
 }
 
 // API response structure for logs
@@ -6263,9 +4979,8 @@ pub fn run() {
             complete_oauth,
             disconnect_provider,
             import_vertex_credential,
-            get_config,
-            save_config,
-            check_provider_health,
+            commands::config::get_config,
+            commands::config::save_config,
             detect_ai_tools,
             configure_continue,
             get_tool_setup_info,
@@ -6278,7 +4993,6 @@ pub fn run() {
             add_request_to_history,
             clear_request_history,
             sync_usage_from_proxy,
-            test_agent_connection,
             get_available_models,
             test_openai_provider,
             // API Keys Management
@@ -6321,15 +5035,6 @@ pub fn run() {
             set_websocket_auth,
             get_force_model_mappings,
             set_force_model_mappings,
-            get_claude_code_settings,
-            set_claude_code_model,
-            get_oauth_excluded_models,
-            set_oauth_excluded_models,
-            delete_oauth_excluded_models,
-            get_config_yaml,
-            set_config_yaml,
-            get_request_error_logs,
-            get_request_error_log_content,
             // Window behavior
             get_close_to_tray,
             set_close_to_tray,
