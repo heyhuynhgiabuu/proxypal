@@ -566,7 +566,7 @@ export async function getRequestHistory(): Promise<RequestHistory> {
 
 export async function addRequestToHistory(
 	request: RequestLog,
-): Promise<RequestHistory> {
+): Promise<RequestLog> {
 	return invoke("add_request_to_history", { request });
 }
 

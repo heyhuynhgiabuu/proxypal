@@ -19,7 +19,6 @@ import {
 	detectCliAgents,
 	disconnectProvider,
 	getAvailableModels,
-	getRequestHistory,
 	getUsageStats,
 	importVertexCredential,
 	onRequestLog,
@@ -35,6 +34,7 @@ import {
 	type UsageStats,
 } from "../lib/tauri";
 import { appStore } from "../stores/app";
+import { requestStore } from "../stores/requests";
 import { themeStore } from "../stores/theme";
 import { toastStore } from "../stores/toast";
 
@@ -362,12 +362,8 @@ export function DashboardPage() {
 		models?: AvailableModel[];
 	} | null>(null);
 	// No dismiss state - onboarding stays until setup complete
-	const [history, setHistory] = createSignal<RequestHistory>({
-		requests: [],
-		totalTokensIn: 0,
-		totalTokensOut: 0,
-		totalCostUsd: 0,
-	});
+	// Use centralized store for history
+	const history = requestStore.history;
 	const [stats, setStats] = createSignal<UsageStats | null>(null);
 	const [models, setModels] = createSignal<AvailableModel[]>([]);
 
@@ -403,16 +399,15 @@ export function DashboardPage() {
 			console.error("Failed to detect CLI agents:", err);
 		}
 
-		// Load history
+		// Load history from centralized store
 		try {
-			const hist = await getRequestHistory();
-			setHistory(hist);
+			await requestStore.loadHistory();
 
 			// Sync real token data from proxy if running
 			if (appStore.proxyStatus().running) {
 				try {
-					const synced = await syncUsageFromProxy();
-					setHistory(synced);
+					await syncUsageFromProxy();
+					await requestStore.loadHistory(); // Reload to get synced data
 				} catch (syncErr) {
 					console.warn("Failed to sync usage from proxy:", syncErr);
 					// Continue with disk-only history
@@ -440,25 +435,17 @@ export function DashboardPage() {
 			}
 		}
 
-		// Listen for new requests and refresh data
+		// Listen for new requests and refresh stats only
+		// History is handled by RequestMonitor via centralized store
 		const unlisten = await onRequestLog(async () => {
 			// Debounce: wait 1 second after request to allow backend to process
 			setTimeout(async () => {
 				try {
-					const hist = await getRequestHistory();
-					setHistory(hist);
-
-					// Also sync from proxy if running
-					if (appStore.proxyStatus().running) {
-						const synced = await syncUsageFromProxy();
-						setHistory(synced);
-					}
-
-					// Refresh stats
+					// Refresh stats only - history is updated by RequestMonitor
 					const usage = await getUsageStats();
 					setStats(usage);
 				} catch (err) {
-					console.error("Failed to refresh after new request:", err);
+					console.error("Failed to refresh stats after new request:", err);
 				}
 			}, 1000);
 		});

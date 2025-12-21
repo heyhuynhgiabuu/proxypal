@@ -1894,8 +1894,9 @@ fn get_request_history() -> RequestHistory {
 }
 
 // Add a request to history (called when request-log event is emitted)
+// Returns only the added request to minimize data transfer (memory optimization)
 #[tauri::command]
-fn add_request_to_history(request: RequestLog) -> Result<RequestHistory, String> {
+fn add_request_to_history(request: RequestLog) -> Result<RequestLog, String> {
     let mut history = load_request_history();
     
     // Calculate cost for this request
@@ -1910,6 +1911,7 @@ fn add_request_to_history(request: RequestLog) -> Result<RequestHistory, String>
     
     // Add request (with deduplication check)
     // Check if request with same ID already exists to prevent duplicates
+    let request_clone = request.clone();
     if !history.requests.iter().any(|r| r.id == request.id) {
         history.requests.push(request);
         
@@ -1924,7 +1926,8 @@ fn add_request_to_history(request: RequestLog) -> Result<RequestHistory, String>
     // Save
     save_request_history(&history)?;
     
-    Ok(history)
+    // Return only the added request, not the full history
+    Ok(request_clone)
 }
 
 // Clear request history

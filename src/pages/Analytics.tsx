@@ -96,11 +96,11 @@ function LineChart(props: {
 		chartInstance = new Chart(canvasRef, {
 			type: "line",
 			data: {
-				labels: props.labels,
+				labels: props.labels.slice(-50), // Limit to last 50 points for performance
 				datasets: [
 					{
 						label: props.label,
-						data: props.data,
+						data: props.data.slice(-50), // Limit to last 50 points
 						borderColor: props.color,
 						backgroundColor: props.fillColor,
 						fill: true,
@@ -113,6 +113,11 @@ function LineChart(props: {
 			options: {
 				responsive: true,
 				maintainAspectRatio: false,
+				parsing: false, // Performance: skip parsing since data is already formatted
+				normalized: true, // Performance: data is already normalized
+				animation: {
+					duration: 300, // Faster animations
+				},
 				plugins: {
 					legend: {
 						display: false,
@@ -166,8 +171,8 @@ function LineChart(props: {
 	// Update chart when data changes
 	createEffect(() => {
 		// Access props to track changes
-		const labels = props.labels;
-		const data = props.data;
+		const labels = props.labels.slice(-50); // Limit to last 50 points
+		const data = props.data.slice(-50);
 		if (chartInstance && labels && data) {
 			chartInstance.data.labels = labels;
 			chartInstance.data.datasets[0].data = data;
@@ -178,6 +183,16 @@ function LineChart(props: {
 	onCleanup(() => {
 		if (chartInstance) {
 			chartInstance.destroy();
+			chartInstance = null;
+		}
+		// Reset canvas to release memory (Windows WebView2 fix)
+		if (canvasRef) {
+			const ctx = canvasRef.getContext("2d");
+			if (ctx) {
+				ctx.clearRect(0, 0, canvasRef.width, canvasRef.height);
+			}
+			canvasRef.width = 0;
+			canvasRef.height = 0;
 		}
 	});
 
