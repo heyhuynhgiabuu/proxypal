@@ -500,6 +500,23 @@ export function ApiKeysPage() {
 											class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
 										/>
 									</label>
+									<label class="block">
+										<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+											Prefix (optional)
+										</span>
+										<input
+											type="text"
+											value={newGeminiKey().prefix || ""}
+											onInput={(e) =>
+												setNewGeminiKey({
+													...newGeminiKey(),
+													prefix: e.currentTarget.value || undefined,
+												})
+											}
+											placeholder="e.g. gemini-prod"
+											class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+										/>
+									</label>
 									<div class="flex gap-2 pt-2">
 										<Button
 											variant="primary"
@@ -626,6 +643,23 @@ export function ApiKeysPage() {
 											class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
 										/>
 									</label>
+									<label class="block">
+										<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+											Prefix (optional)
+										</span>
+										<input
+											type="text"
+											value={newClaudeKey().prefix || ""}
+											onInput={(e) =>
+												setNewClaudeKey({
+													...newClaudeKey(),
+													prefix: e.currentTarget.value || undefined,
+												})
+											}
+											placeholder="e.g. claude-prod"
+											class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+										/>
+									</label>
 									<div class="flex gap-2 pt-2">
 										<Button
 											variant="primary"
@@ -748,6 +782,23 @@ export function ApiKeysPage() {
 												})
 											}
 											placeholder="https://api.openai.com"
+											class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+										/>
+									</label>
+									<label class="block">
+										<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+											Prefix (optional)
+										</span>
+										<input
+											type="text"
+											value={newCodexKey().prefix || ""}
+											onInput={(e) =>
+												setNewCodexKey({
+													...newCodexKey(),
+													prefix: e.currentTarget.value || undefined,
+												})
+											}
+											placeholder="e.g. codex-prod"
 											class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
 										/>
 									</label>
@@ -953,6 +1004,23 @@ export function ApiKeysPage() {
 												})
 											}
 											placeholder="sk-or-..."
+											class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+										/>
+									</label>
+									<label class="block">
+										<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+											Prefix (optional)
+										</span>
+										<input
+											type="text"
+											value={newOpenaiProvider().prefix || ""}
+											onInput={(e) =>
+												setNewOpenaiProvider({
+													...newOpenaiProvider(),
+													prefix: e.currentTarget.value || undefined,
+												})
+											}
+											placeholder="e.g. openrouter-prod"
 											class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
 										/>
 									</label>

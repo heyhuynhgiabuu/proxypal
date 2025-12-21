@@ -624,6 +624,7 @@ export interface GeminiApiKey {
 	proxyUrl?: string;
 	headers?: Record<string, string>;
 	excludedModels?: string[];
+	prefix?: string;
 }
 
 // Claude API Key structure
@@ -634,6 +635,7 @@ export interface ClaudeApiKey {
 	headers?: Record<string, string>;
 	models?: ModelMapping[];
 	excludedModels?: string[];
+	prefix?: string;
 }
 
 // Codex API Key structure
@@ -642,6 +644,7 @@ export interface CodexApiKey {
 	baseUrl?: string;
 	proxyUrl?: string;
 	headers?: Record<string, string>;
+	prefix?: string;
 }
 
 // OpenAI-Compatible Provider structure
@@ -654,6 +657,7 @@ export interface OpenAICompatibleProvider {
 	}>;
 	models?: ModelMapping[];
 	headers?: Record<string, string>;
+	prefix?: string;
 }
 
 // API Keys response wrapper
