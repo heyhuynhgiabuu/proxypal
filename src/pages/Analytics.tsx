@@ -14,6 +14,7 @@ import { appStore } from "../stores/app";
 Chart.register(...registerables);
 
 type TimeRange = "hour" | "day";
+type DatePreset = "24h" | "7d" | "14d" | "30d" | "all";
 
 function formatNumber(num: number): string {
 	if (num >= 1_000_000) {
@@ -51,6 +52,17 @@ function formatLabel(label: string, range: TimeRange): string {
 	} catch {
 		return label;
 	}
+}
+
+function formatTimeAgo(timestamp: number): string {
+	const seconds = Math.floor((Date.now() - timestamp) / 1000);
+	if (seconds < 60) return "just now";
+	const minutes = Math.floor(seconds / 60);
+	if (minutes < 60) return `${minutes}m ago`;
+	const hours = Math.floor(minutes / 60);
+	if (hours < 24) return `${hours}h ago`;
+	const days = Math.floor(hours / 24);
+	return `${days}d ago`;
 }
 
 // Simple mini bar chart for model breakdown
@@ -199,23 +211,125 @@ function LineChart(props: {
 	return <canvas ref={canvasRef} class="w-full h-full" />;
 }
 
+// Summary stat card component
+function StatCard(props: {
+	title: string;
+	value: string;
+	subtitle?: string;
+	icon: "bolt" | "check" | "tokens" | "flow";
+	colorClass: string;
+}) {
+	const icons = {
+		bolt: (
+			<svg
+				class="w-4 h-4"
+				fill="none"
+				stroke="currentColor"
+				viewBox="0 0 24 24"
+			>
+				<path
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					stroke-width="2"
+					d="M13 10V3L4 14h7v7l9-11h-7z"
+				/>
+			</svg>
+		),
+		check: (
+			<svg
+				class="w-4 h-4"
+				fill="none"
+				stroke="currentColor"
+				viewBox="0 0 24 24"
+			>
+				<path
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					stroke-width="2"
+					d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+				/>
+			</svg>
+		),
+		tokens: (
+			<svg
+				class="w-4 h-4"
+				fill="none"
+				stroke="currentColor"
+				viewBox="0 0 24 24"
+			>
+				<path
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					stroke-width="2"
+					d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
+				/>
+			</svg>
+		),
+		flow: (
+			<svg
+				class="w-4 h-4"
+				fill="none"
+				stroke="currentColor"
+				viewBox="0 0 24 24"
+			>
+				<path
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					stroke-width="2"
+					d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"
+				/>
+			</svg>
+		),
+	};
+
+	return (
+		<div
+			class={`p-4 rounded-xl border transition-shadow hover:shadow-md ${props.colorClass}`}
+		>
+			<div class="flex items-center gap-2 mb-2">
+				<span class="opacity-80">{icons[props.icon]}</span>
+				<span class="text-xs font-medium uppercase tracking-wider opacity-80">
+					{props.title}
+				</span>
+			</div>
+			<p class="text-2xl font-bold">{props.value}</p>
+			<Show when={props.subtitle}>
+				<p class="text-xs opacity-70 mt-1">{props.subtitle}</p>
+			</Show>
+		</div>
+	);
+}
+
 export function Analytics() {
 	const { setCurrentPage } = appStore;
 	const [stats, setStats] = createSignal<UsageStats | null>(null);
 	const [loading, setLoading] = createSignal(true);
 	const [timeRange, setTimeRange] = createSignal<TimeRange>("day");
+	const [datePreset, setDatePreset] = createSignal<DatePreset>("7d");
 	const [refreshing, setRefreshing] = createSignal(false);
+	const [lastUpdated, setLastUpdated] = createSignal<number>(Date.now());
 
 	const fetchStats = async () => {
 		try {
 			setRefreshing(true);
 			const data = await getUsageStats();
 			setStats(data);
+			setLastUpdated(Date.now());
 		} catch (err) {
 			console.error("Failed to fetch analytics:", err);
 		} finally {
 			setLoading(false);
 			setRefreshing(false);
+		}
+	};
+
+	// Handle date preset change
+	const handlePresetChange = (preset: DatePreset) => {
+		setDatePreset(preset);
+		if (preset === "24h") {
+			setTimeRange("hour");
+		} else {
+			setTimeRange("day");
 		}
 	};
 
@@ -263,11 +377,19 @@ export function Analytics() {
 		return Math.max(...s.models.map((m) => m.requests));
 	};
 
+	const presets: { label: string; value: DatePreset }[] = [
+		{ label: "24H", value: "24h" },
+		{ label: "7D", value: "7d" },
+		{ label: "14D", value: "14d" },
+		{ label: "30D", value: "30d" },
+		{ label: "All", value: "all" },
+	];
+
 	return (
 		<div class="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 sm:p-6">
 			<div class="max-w-6xl mx-auto space-y-6">
 				{/* Header */}
-				<div class="flex items-center justify-between">
+				<div class="flex items-center justify-between flex-wrap gap-3">
 					<div class="flex items-center gap-3">
 						<button
 							onClick={() => setCurrentPage("dashboard")}
@@ -289,15 +411,39 @@ export function Analytics() {
 						</button>
 						<div>
 							<h1 class="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100">
-								Usage Analytics
+								Analytics
 							</h1>
 							<p class="text-sm text-gray-500 dark:text-gray-400">
-								Request and token usage trends
+								Track usage & insights
 							</p>
 						</div>
 					</div>
 
-					<div class="flex items-center gap-2">
+					<div class="flex items-center gap-2 flex-wrap">
+						{/* Date Presets */}
+						<div class="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+							<For each={presets}>
+								{(preset) => (
+									<button
+										onClick={() => handlePresetChange(preset.value)}
+										class={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+											datePreset() === preset.value
+												? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm"
+												: "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+										}`}
+									>
+										{preset.label}
+									</button>
+								)}
+							</For>
+						</div>
+
+						{/* Last Updated */}
+						<span class="text-xs text-gray-400 dark:text-gray-500 hidden sm:inline">
+							Updated {formatTimeAgo(lastUpdated())}
+						</span>
+
+						{/* Refresh Button */}
 						<button
 							onClick={fetchStats}
 							disabled={refreshing()}
@@ -316,14 +462,14 @@ export function Analytics() {
 									d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
 								/>
 							</svg>
-							Refresh
+							<span class="hidden sm:inline">Refresh</span>
 						</button>
 					</div>
 				</div>
 
 				{/* Empty state - no requests yet */}
 				<Show when={!loading() && (!stats() || stats()!.totalRequests === 0)}>
-					<div class="text-center py-16 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+					<div class="text-center py-16 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
 						<svg
 							class="w-16 h-16 mx-auto text-gray-300 dark:text-gray-600 mb-4"
 							fill="none"
@@ -348,7 +494,7 @@ export function Analytics() {
 
 				{/* Loading state */}
 				<Show when={loading()}>
-					<div class="grid grid-cols-4 gap-4">
+					<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
 						<For each={[1, 2, 3, 4]}>
 							{() => (
 								<div class="h-24 bg-gray-200 dark:bg-gray-700 rounded-xl animate-pulse" />
@@ -361,152 +507,57 @@ export function Analytics() {
 				{/* Stats content */}
 				<Show when={!loading() && stats() && stats()!.totalRequests > 0}>
 					{/* Overview cards */}
-					<div class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-						<div class="p-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/50">
-							<div class="flex items-center gap-2 mb-2">
-								<svg
-									class="w-4 h-4 text-blue-500"
-									fill="none"
-									stroke="currentColor"
-									viewBox="0 0 24 24"
-								>
-									<path
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										stroke-width="2"
-										d="M13 10V3L4 14h7v7l9-11h-7z"
-									/>
-								</svg>
-								<span class="text-xs font-medium text-blue-600 dark:text-blue-400 uppercase tracking-wider">
-									Total Requests
-								</span>
-							</div>
-							<p class="text-2xl font-bold text-blue-700 dark:text-blue-300">
-								{formatNumber(stats()!.totalRequests)}
-							</p>
-							<p class="text-xs text-blue-600/70 dark:text-blue-400/70 mt-1">
-								{formatNumber(stats()!.requestsToday)} today
-							</p>
-						</div>
-
-						<div class="p-4 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-100 dark:border-green-800/50">
-							<div class="flex items-center gap-2 mb-2">
-								<svg
-									class="w-4 h-4 text-green-500"
-									fill="none"
-									stroke="currentColor"
-									viewBox="0 0 24 24"
-								>
-									<path
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										stroke-width="2"
-										d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-									/>
-								</svg>
-								<span class="text-xs font-medium text-green-600 dark:text-green-400 uppercase tracking-wider">
-									Success Rate
-								</span>
-							</div>
-							<p class="text-2xl font-bold text-green-700 dark:text-green-300">
-								{successRate()}%
-							</p>
-							<p class="text-xs text-green-600/70 dark:text-green-400/70 mt-1">
-								{formatNumber(stats()!.successCount)} successful
-							</p>
-						</div>
-
-						<div class="p-4 rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-100 dark:border-purple-800/50">
-							<div class="flex items-center gap-2 mb-2">
-								<svg
-									class="w-4 h-4 text-purple-500"
-									fill="none"
-									stroke="currentColor"
-									viewBox="0 0 24 24"
-								>
-									<path
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										stroke-width="2"
-										d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
-									/>
-								</svg>
-								<span class="text-xs font-medium text-purple-600 dark:text-purple-400 uppercase tracking-wider">
-									Total Tokens
-								</span>
-							</div>
-							<p class="text-2xl font-bold text-purple-700 dark:text-purple-300">
-								{formatTokens(stats()!.totalTokens)}
-							</p>
-							<p class="text-xs text-purple-600/70 dark:text-purple-400/70 mt-1">
-								{formatTokens(stats()!.tokensToday)} today
-							</p>
-						</div>
-
-						<div class="p-4 rounded-xl bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-800/50">
-							<div class="flex items-center gap-2 mb-2">
-								<svg
-									class="w-4 h-4 text-orange-500"
-									fill="none"
-									stroke="currentColor"
-									viewBox="0 0 24 24"
-								>
-									<path
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										stroke-width="2"
-										d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"
-									/>
-								</svg>
-								<span class="text-xs font-medium text-orange-600 dark:text-orange-400 uppercase tracking-wider">
-									Token Flow
-								</span>
-							</div>
-							<div class="flex items-baseline gap-2">
-								<p class="text-lg font-bold text-orange-700 dark:text-orange-300">
-									{formatTokens(stats()!.inputTokens)}
-								</p>
-								<span class="text-xs text-orange-500">in</span>
-							</div>
-							<div class="flex items-baseline gap-2">
-								<p class="text-lg font-bold text-orange-700 dark:text-orange-300">
-									{formatTokens(stats()!.outputTokens)}
-								</p>
-								<span class="text-xs text-orange-500">out</span>
-							</div>
-						</div>
+					<div class="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+						<StatCard
+							title="Total Requests"
+							value={formatNumber(stats()!.totalRequests)}
+							subtitle={`${formatNumber(stats()!.requestsToday)} today`}
+							icon="bolt"
+							colorClass="bg-blue-50 dark:bg-blue-900/20 border-blue-100 dark:border-blue-800/50 text-blue-700 dark:text-blue-300"
+						/>
+						<StatCard
+							title="Success Rate"
+							value={`${successRate()}%`}
+							subtitle={`${formatNumber(stats()!.successCount)} successful`}
+							icon="check"
+							colorClass="bg-green-50 dark:bg-green-900/20 border-green-100 dark:border-green-800/50 text-green-700 dark:text-green-300"
+						/>
+						<StatCard
+							title="Total Tokens"
+							value={formatTokens(stats()!.totalTokens)}
+							subtitle={`${formatTokens(stats()!.inputTokens)} in / ${formatTokens(stats()!.outputTokens)} out`}
+							icon="tokens"
+							colorClass="bg-purple-50 dark:bg-purple-900/20 border-purple-100 dark:border-purple-800/50 text-purple-700 dark:text-purple-300"
+						/>
+						<StatCard
+							title="Today's Tokens"
+							value={formatTokens(stats()!.tokensToday)}
+							subtitle={`${formatNumber(stats()!.requestsToday)} requests`}
+							icon="flow"
+							colorClass="bg-orange-50 dark:bg-orange-900/20 border-orange-100 dark:border-orange-800/50 text-orange-700 dark:text-orange-300"
+						/>
 					</div>
 
-					{/* Charts section */}
+					{/* Charts section - Full width trend chart */}
 					<Show when={hasChartData()}>
-						<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
-							{/* Time range toggle */}
-							<div class="flex items-center justify-between mb-4">
+						<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 sm:p-6 shadow-sm">
+							<div class="flex items-center gap-2 mb-4">
+								<svg
+									class="w-5 h-5 text-blue-500"
+									fill="none"
+									stroke="currentColor"
+									viewBox="0 0 24 24"
+								>
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										stroke-width="2"
+										d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
+									/>
+								</svg>
 								<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
-									Request Trends
+									{datePreset() === "24h" ? "Last 24 Hours" : "Request Trends"}
 								</h2>
-								<div class="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
-									<button
-										onClick={() => setTimeRange("hour")}
-										class={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
-											timeRange() === "hour"
-												? "bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm"
-												: "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
-										}`}
-									>
-										By Hour
-									</button>
-									<button
-										onClick={() => setTimeRange("day")}
-										class={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
-											timeRange() === "day"
-												? "bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm"
-												: "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
-										}`}
-									>
-										By Day
-									</button>
-								</div>
 							</div>
 
 							{/* Requests chart */}
@@ -524,10 +575,25 @@ export function Analytics() {
 
 							{/* Tokens chart */}
 							<Show when={tokensChartData().data.length > 0}>
-								<div class="mt-6">
-									<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-										Token Usage
-									</h2>
+								<div class="mt-6 pt-6 border-t border-gray-100 dark:border-gray-700">
+									<div class="flex items-center gap-2 mb-4">
+										<svg
+											class="w-5 h-5 text-purple-500"
+											fill="none"
+											stroke="currentColor"
+											viewBox="0 0 24 24"
+										>
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												stroke-width="2"
+												d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
+											/>
+										</svg>
+										<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+											Token Usage
+										</h2>
+									</div>
 									<div class="h-48 sm:h-64">
 										<LineChart
 											labels={tokensChartData().labels}
@@ -544,7 +610,7 @@ export function Analytics() {
 
 					{/* No chart data state */}
 					<Show when={!hasChartData()}>
-						<div class="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+						<div class="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
 							<svg
 								class="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-3"
 								fill="none"
@@ -576,10 +642,31 @@ export function Analytics() {
 							).length > 0
 						}
 					>
-						<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
-							<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-								Model Usage
-							</h2>
+						<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 sm:p-6 shadow-sm">
+							<div class="flex items-center gap-2 mb-4">
+								<svg
+									class="w-5 h-5 text-indigo-500"
+									fill="none"
+									stroke="currentColor"
+									viewBox="0 0 24 24"
+								>
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										stroke-width="2"
+										d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"
+									/>
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										stroke-width="2"
+										d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"
+									/>
+								</svg>
+								<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+									Model Usage
+								</h2>
+							</div>
 							<div class="overflow-x-auto">
 								<table class="w-full">
 									<thead>
@@ -599,7 +686,7 @@ export function Analytics() {
 												.slice(0, 10)}
 										>
 											{(model) => (
-												<tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+												<tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer">
 													<td class="py-3">
 														<span
 															class="font-mono text-sm text-gray-900 dark:text-gray-100 truncate block max-w-[200px]"
