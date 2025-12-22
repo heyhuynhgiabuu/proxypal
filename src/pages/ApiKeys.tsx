@@ -50,6 +50,13 @@ export function ApiKeysPage() {
 
 	// Form state for adding new keys
 	const [showAddForm, setShowAddForm] = createSignal(false);
+	const [editingIndex, setEditingIndex] = createSignal<number | null>(null);
+	const [showModelManager, setShowModelManager] = createSignal(false);
+	const [managingProviderIndex, setManagingProviderIndex] = createSignal<
+		number | null
+	>(null);
+	const [newModelInput, setNewModelInput] = createSignal("");
+
 	const [newGeminiKey, setNewGeminiKey] = createSignal<GeminiApiKey>({
 		apiKey: "",
 	});
@@ -64,6 +71,7 @@ export function ApiKeysPage() {
 			name: "",
 			baseUrl: "",
 			apiKeyEntries: [{ apiKey: "" }],
+			models: [],
 		});
 
 	// Test connection state
@@ -258,6 +266,138 @@ export function ApiKeysPage() {
 			toastStore.success("Provider deleted");
 		} catch (error) {
 			toastStore.error("Failed to delete provider", String(error));
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	const handleEditProvider = (index: number) => {
+		setEditingIndex(index);
+		setNewOpenaiProvider({
+			...openaiProviders()[index],
+			apiKeyEntries: [...openaiProviders()[index].apiKeyEntries],
+		});
+		setShowAddForm(true);
+	};
+
+	const handleUpdateProvider = async () => {
+		const provider = newOpenaiProvider();
+		if (!provider.name.trim() || !provider.baseUrl.trim()) {
+			toastStore.error("Name and Base URL required");
+			return;
+		}
+		if (!provider.apiKeyEntries[0]?.apiKey.trim()) {
+			toastStore.error("At least one API key required");
+			return;
+		}
+
+		setLoading(true);
+		try {
+			const index = editingIndex();
+			if (index === null) return;
+
+			const updated = openaiProviders().map((p, i) =>
+				i === index ? provider : p,
+			);
+			await setOpenAICompatibleProviders(updated);
+			setOpenaiProviders(updated);
+			setNewOpenaiProvider({
+				name: "",
+				baseUrl: "",
+				apiKeyEntries: [{ apiKey: "" }],
+				models: [],
+			});
+			setEditingIndex(null);
+			setShowAddForm(false);
+			toastStore.success("Provider updated");
+		} catch (error) {
+			toastStore.error("Failed to update provider", String(error));
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	const handleCancelEdit = () => {
+		setEditingIndex(null);
+		setNewOpenaiProvider({
+			name: "",
+			baseUrl: "",
+			apiKeyEntries: [{ apiKey: "" }],
+			models: [],
+		});
+		setShowAddForm(false);
+	};
+
+	const handleOpenModelManager = (index: number) => {
+		setManagingProviderIndex(index);
+		setShowModelManager(true);
+	};
+
+	const handleAddModel = () => {
+		const model = newModelInput().trim();
+		if (!model) return;
+
+		const index = managingProviderIndex();
+		if (index === null) return;
+
+		const updated = openaiProviders().map((p, i) => {
+			if (i === index) {
+				const existingModels = p.models || [];
+				const alreadyExists = existingModels.some(
+					(m) => m.name === model || m.alias === model,
+				);
+				if (!alreadyExists) {
+					return {
+						...p,
+						models: [...existingModels, { name: model }],
+					};
+				}
+			}
+			return p;
+		});
+
+		setOpenaiProviders(updated);
+		setNewModelInput("");
+	};
+
+	const handleRemoveModel = async (modelIndex: number) => {
+		const providerIndex = managingProviderIndex();
+		if (providerIndex === null) return;
+
+		const updated = openaiProviders().map((p, i) => {
+			if (i === providerIndex && p.models) {
+				return {
+					...p,
+					models: p.models.filter((_, mIndex) => mIndex !== modelIndex),
+				};
+			}
+			return p;
+		});
+
+		setLoading(true);
+		try {
+			await setOpenAICompatibleProviders(updated);
+			setOpenaiProviders(updated);
+			toastStore.success("Model removed");
+		} catch (error) {
+			toastStore.error("Failed to remove model", String(error));
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	const handleSaveModels = async () => {
+		const index = managingProviderIndex();
+		if (index === null) return;
+
+		setLoading(true);
+		try {
+			await setOpenAICompatibleProviders(openaiProviders());
+			setShowModelManager(false);
+			setManagingProviderIndex(null);
+			toastStore.success("Models saved");
+		} catch (error) {
+			toastStore.error("Failed to save models", String(error));
 		} finally {
 			setLoading(false);
 		}
@@ -885,6 +1025,7 @@ export function ApiKeysPage() {
 																)
 															}
 															disabled={testingIndex() === index()}
+															title="Test connection"
 														>
 															<Show
 																when={testingIndex() === index()}
@@ -928,9 +1069,50 @@ export function ApiKeysPage() {
 														<Button
 															variant="ghost"
 															size="sm"
+															onClick={() => handleEditProvider(index())}
+															title="Edit provider"
+														>
+															<svg
+																class="w-4 h-4 text-gray-500"
+																fill="none"
+																stroke="currentColor"
+																viewBox="0 0 24 24"
+															>
+																<path
+																	stroke-linecap="round"
+																	stroke-linejoin="round"
+																	stroke-width="2"
+																	d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+																/>
+															</svg>
+														</Button>
+														<Button
+															variant="ghost"
+															size="sm"
+															onClick={() => handleOpenModelManager(index())}
+															title="Manage models"
+														>
+															<svg
+																class="w-4 h-4 text-gray-500"
+																fill="none"
+																stroke="currentColor"
+																viewBox="0 0 24 24"
+															>
+																<path
+																	stroke-linecap="round"
+																	stroke-linejoin="round"
+																	stroke-width="2"
+																	d="M4 6h16M4 10h16M4 14h16M4 18h16"
+																/>
+															</svg>
+														</Button>
+														<Button
+															variant="ghost"
+															size="sm"
 															onClick={() =>
 																handleDeleteOpenaiProvider(index())
 															}
+															title="Delete provider"
 														>
 															<svg
 																class="w-4 h-4 text-red-500"
@@ -1028,10 +1210,16 @@ export function ApiKeysPage() {
 										<Button
 											variant="primary"
 											size="sm"
-											onClick={handleAddOpenaiProvider}
+											onClick={
+												editingIndex() !== null
+													? handleUpdateProvider
+													: handleAddOpenaiProvider
+											}
 											disabled={loading()}
 										>
-											Add Provider
+											{editingIndex() !== null
+												? "Update Provider"
+												: "Add Provider"}
 										</Button>
 										<Button
 											variant="secondary"
@@ -1077,7 +1265,11 @@ export function ApiKeysPage() {
 										<Button
 											variant="ghost"
 											size="sm"
-											onClick={() => setShowAddForm(false)}
+											onClick={
+												editingIndex() !== null
+													? handleCancelEdit
+													: () => setShowAddForm(false)
+											}
 										>
 											Cancel
 										</Button>
@@ -1105,30 +1297,144 @@ export function ApiKeysPage() {
 									</Show>
 								</div>
 							</Show>
+						</div>
+					</Show>
 
-							<Show when={!showAddForm()}>
-								<Button
-									variant="secondary"
-									onClick={() => setShowAddForm(true)}
-									disabled={!proxyStatus().running}
-									class="w-full"
-								>
-									<svg
-										class="w-4 h-4 mr-2"
-										fill="none"
-										stroke="currentColor"
-										viewBox="0 0 24 24"
+					{/* Model Manager Modal */}
+					<Show when={showModelManager()}>
+						<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+							<div class="w-full max-w-lg bg-white dark:bg-gray-900 rounded-xl shadow-xl p-6 space-y-4">
+								<div class="flex items-center justify-between">
+									<h3 class="font-semibold text-gray-900 dark:text-gray-100">
+										Manage Models
+									</h3>
+									<Button
+										variant="ghost"
+										size="sm"
+										onClick={() => {
+											setShowModelManager(false);
+											setManagingProviderIndex(null);
+										}}
 									>
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											stroke-width="2"
-											d="M12 4v16m8-8H4"
-										/>
-									</svg>
-									Add OpenAI-Compatible Provider
-								</Button>
-							</Show>
+										<svg
+											class="w-5 h-5"
+											fill="none"
+											stroke="currentColor"
+											viewBox="0 0 24 24"
+										>
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												stroke-width="2"
+												d="M6 18L18 6M6 6l12 12"
+											/>
+										</svg>
+									</Button>
+								</div>
+
+								<div class="flex gap-2">
+									<input
+										type="text"
+										value={newModelInput()}
+										onInput={(e) => setNewModelInput(e.currentTarget.value)}
+										placeholder="Model name (e.g., gpt-4-turbo)"
+										class="flex-1 px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+										onKeyDown={(e) => {
+											if (e.key === "Enter") {
+												handleAddModel();
+											}
+										}}
+									/>
+									<Button
+										variant="primary"
+										size="sm"
+										onClick={handleAddModel}
+										disabled={!newModelInput().trim()}
+									>
+										Add
+									</Button>
+								</div>
+
+								<div class="max-h-60 overflow-y-auto space-y-2">
+									<Show
+										when={
+											managingProviderIndex() !== null &&
+											(
+												openaiProviders()[managingProviderIndex()!]?.models ||
+												[]
+											).length > 0
+										}
+									>
+										<For
+											each={
+												openaiProviders()[managingProviderIndex()!]?.models ||
+												[]
+											}
+										>
+											{(model, index) => (
+												<div class="flex items-center justify-between p-2 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+													<span class="text-sm text-gray-700 dark:text-gray-300">
+														{model.name}
+													</span>
+													<Button
+														variant="ghost"
+														size="sm"
+														onClick={() => handleRemoveModel(index())}
+													>
+														<svg
+															class="w-4 h-4 text-red-500"
+															fill="none"
+															stroke="currentColor"
+															viewBox="0 0 24 24"
+														>
+															<path
+																stroke-linecap="round"
+																stroke-linejoin="round"
+																stroke-width="2"
+																d="M6 18L18 6M6 6l12 12"
+															/>
+														</svg>
+													</Button>
+												</div>
+											)}
+										</For>
+									</Show>
+									<Show
+										when={
+											managingProviderIndex() !== null &&
+											(
+												openaiProviders()[managingProviderIndex()!]?.models ||
+												[]
+											).length === 0
+										}
+									>
+										<p class="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
+											No models added yet
+										</p>
+									</Show>
+								</div>
+
+								<div class="flex justify-end gap-2 pt-2">
+									<Button
+										variant="ghost"
+										size="sm"
+										onClick={() => {
+											setShowModelManager(false);
+											setManagingProviderIndex(null);
+										}}
+									>
+										Cancel
+									</Button>
+									<Button
+										variant="primary"
+										size="sm"
+										onClick={handleSaveModels}
+										disabled={loading()}
+									>
+										Save
+									</Button>
+								</div>
+							</div>
 						</div>
 					</Show>
 

@@ -280,6 +280,7 @@ export interface AppConfig {
 	ampOpenaiProvider?: AmpOpenAIProvider; // Deprecated: for migration only
 	ampOpenaiProviders: AmpOpenAIProvider[]; // Array of custom providers
 	ampRoutingMode: string; // "mappings" or "openai"
+	routingStrategy: string; // "round-robin", "fill-first", "sequential"
 	copilot: CopilotConfig;
 	forceModelMappings: boolean; // Force model mappings to take precedence over local API keys
 }

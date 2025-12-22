@@ -58,6 +58,7 @@ function createAppStore() {
 		ampOpenaiProvider: undefined,
 		ampOpenaiProviders: [],
 		ampRoutingMode: "mappings",
+		routingStrategy: "round-robin",
 		forceModelMappings: false,
 		copilot: {
 			enabled: false,

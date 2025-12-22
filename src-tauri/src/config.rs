@@ -44,6 +44,8 @@ pub struct AppConfig {
     pub amp_openai_providers: Vec<AmpOpenAIProvider>,
     #[serde(default)]
     pub amp_routing_mode: String,
+    #[serde(default = "default_routing_strategy")]
+    pub routing_strategy: String,
     #[serde(default)]
     pub copilot: CopilotConfig,
     #[serde(default)]
@@ -88,6 +90,10 @@ fn default_config_version() -> u8 {
     1
 }
 
+fn default_routing_strategy() -> String {
+    "round-robin".to_string()
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -109,6 +115,7 @@ impl Default for AppConfig {
             amp_openai_provider: None,
             amp_openai_providers: Vec::new(),
             amp_routing_mode: "mappings".to_string(),
+            routing_strategy: "round-robin".to_string(),
             copilot: CopilotConfig::default(),
             force_model_mappings: false,
             claude_api_keys: Vec::new(),
