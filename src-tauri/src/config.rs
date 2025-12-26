@@ -3,8 +3,9 @@ use serde::{Deserialize, Serialize};
 use crate::types::{
     AmpModelMapping, AmpOpenAIProvider,
     ClaudeApiKey, GeminiApiKey, CodexApiKey,
-    CopilotConfig,
+    CopilotConfig, SshConfig,
     amp::generate_uuid,
+
 };
 
 /// App configuration persisted to config.json
@@ -72,6 +73,8 @@ pub struct AppConfig {
     pub management_key: String,
     #[serde(default)]
     pub commercial_mode: bool,
+    #[serde(default)]
+    pub ssh_configs: Vec<SshConfig>,
 
 }
 
@@ -139,6 +142,7 @@ impl Default for AppConfig {
             proxy_api_key: "proxypal-local".to_string(),
             management_key: "proxypal-mgmt-key".to_string(),
             commercial_mode: false,
+            ssh_configs: Vec::new(),
 
         }
     }

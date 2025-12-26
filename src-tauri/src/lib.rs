@@ -4,6 +4,7 @@ mod proxy;
 mod state;
 mod types;
 mod utils;
+mod ssh_manager;
 
 use crate::config::{get_aggregate_path, get_auth_path, get_history_path, load_config, save_config_to_file};
 use crate::state::AppState;
@@ -17,6 +18,7 @@ use crate::types::{
     AuthFile, LogEntry, DetectedTool, AgentStatus,
     AvailableModel, ProviderTestResult, ProviderHealth, HealthStatus,
 };
+use crate::ssh_manager::SshManager;
 use crate::utils::{estimate_request_cost, detect_provider_from_model, detect_provider_from_path, extract_model_from_path};
 use serde::Deserialize;
 use std::sync::Mutex;
@@ -6027,6 +6029,7 @@ pub fn run() {
             }
         }))
         .manage(app_state)
+        .manage(SshManager::new())
         .setup(|app| {
             // Setup system tray
             #[cfg(desktop)]
@@ -6044,6 +6047,18 @@ pub fn run() {
                     }
                 });
             }
+
+            // Auto-start SSH connections
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let config = crate::config::load_config();
+                let ssh_manager = app_handle.state::<SshManager>();
+                for ssh_config in config.ssh_configs {
+                    if ssh_config.enabled {
+                        ssh_manager.connect(app_handle.clone(), ssh_config);
+                    }
+                }
+            });
 
             Ok(())
         })
@@ -6136,6 +6151,11 @@ pub fn run() {
             set_claude_code_model,
             // Updater support check
             is_updater_supported,
+            // SSH
+            commands::ssh::get_ssh_configs,
+            commands::ssh::save_ssh_config,
+            commands::ssh::delete_ssh_config,
+            commands::ssh::set_ssh_connection,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -6187,6 +6207,11 @@ pub fn run() {
                                 let _ = child.kill();
                             }
                         }
+                    }
+
+                    // Cleaning up SSH connections
+                    if let Some(ssh_manager) = app_handle.try_state::<SshManager>() {
+                        ssh_manager.disconnect_all();
                     }
                 }
                 _ => {}

@@ -4,8 +4,10 @@ import type {
 	AuthStatus,
 	OAuthCallback,
 	ProxyStatus,
+	SshStatusUpdate,
 } from "../lib/tauri";
 import {
+
 	completeOAuth,
 	getAuthStatus,
 	getConfig,
@@ -14,6 +16,7 @@ import {
 	onOAuthCallback,
 	onProxyStatusChanged,
 	onTrayToggleProxy,
+	onSshStatusChanged,
 	refreshAuthStatus,
 	showSystemNotification,
 	startProxy,
@@ -69,7 +72,11 @@ function createAppStore() {
 			rateLimit: undefined,
 			rateLimitWait: false,
 		},
+		sshConfigs: [],
 	});
+
+	// SSH Status
+	const [sshStatus, setSshStatus] = createSignal<Record<string, SshStatusUpdate>>({});
 
 	// UI state
 	const [currentPage, setCurrentPage] = createSignal<
@@ -193,6 +200,10 @@ function createAppStore() {
 				}
 			});
 
+			const unlistenSsh = await onSshStatusChanged((status) => {
+				setSshStatus((prev) => ({ ...prev, [status.id]: status }));
+			});
+
 			// Auto-start proxy if configured
 			if (configState.autoStart) {
 				try {
@@ -218,6 +229,7 @@ function createAppStore() {
 				unlistenAuth();
 				unlistenOAuth();
 				unlistenTray();
+				unlistenSsh();
 			});
 		} catch (error) {
 			console.error("Failed to initialize app:", error);
@@ -239,6 +251,9 @@ function createAppStore() {
 		// Config
 		config,
 		setConfig,
+
+		// SSH
+		sshStatus,
 
 		// UI
 		currentPage,

@@ -12,6 +12,8 @@ pub mod quota;
 pub mod settings;
 pub mod usage;
 
+pub mod ssh;
+
 pub use agents::*;
 pub use amp::*;
 pub use api_keys::*;
@@ -25,3 +27,4 @@ pub use proxy::*;
 pub use quota::*;
 pub use settings::*;
 pub use usage::*;
+pub use ssh::*;
