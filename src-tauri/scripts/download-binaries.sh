@@ -13,7 +13,7 @@ CLIPROXYAPI_REPO="${CLIPROXYAPI_REPO:-heyhuynhgiabuu/CLIProxyAPI}"
 # Get latest version from GitHub API
 VERSION=$(curl -s "https://api.github.com/repos/${CLIPROXYAPI_REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"v?([^"]+)".*/\1/')
 if [ -z "$VERSION" ]; then
-    VERSION="6.6.56-patched"
+    VERSION="6.6.56-patched3"
 fi
 
 # Map Tauri target to CLIProxyAPI asset name (bash 3 compatible - no associative arrays)

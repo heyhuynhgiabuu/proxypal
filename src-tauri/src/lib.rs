@@ -1275,15 +1275,21 @@ async fn start_copilot(
         args.push(config.copilot.account_type.clone());
     }
     
+    // Add GitHub token if specified (for direct authentication)
+    if !config.copilot.github_token.is_empty() {
+        args.push("--github-token".to_string());
+        args.push(config.copilot.github_token.clone());
+    }
+    
     // Add rate limit if specified
     if let Some(rate_limit) = config.copilot.rate_limit {
         args.push("--rate-limit".to_string());
         args.push(rate_limit.to_string());
     }
     
-    // Add rate limit wait flag
+    // Add rate limit wait flag (copilot-api uses --wait)
     if config.copilot.rate_limit_wait {
-        args.push("--rate-limit-wait".to_string());
+        args.push("--wait".to_string());
     }
     
     println!("[copilot] Executing: {} {}", bin_path, args.join(" "));
@@ -4436,42 +4442,47 @@ export AMP_API_KEY="proxypal-local"
                 } else { 
                     output_limit 
                 };
+                
                 let mut model_config = serde_json::json!({
                     "name": display_name,
                     "limit": { "context": context_limit, "output": effective_output_limit }
                 });
                 if is_thinking_model {
+                    // Enable extended thinking
                     model_config["reasoning"] = serde_json::json!(true);
-                    // Use interleaved format for openai-compatible SDK to handle reasoning_content
-                    model_config["interleaved"] = serde_json::json!({
-                        "field": "reasoning_content"
-                    });
-                    // Enable extended thinking with budget_tokens parameter
-                    model_config["options"] = serde_json::json!({
-                        "thinking": {
-                            "type": "enabled",
-                            "budget_tokens": thinking_budget
-                        }
-                    });
+                    // Check if this is a Claude thinking model (uses thinking.budgetTokens)
+                    // vs OpenAI o-series (uses reasoningEffort)
+                    let is_claude_thinking = m.id.contains("claude") && m.id.ends_with("-thinking");
+                    if is_claude_thinking {
+                        model_config["options"] = serde_json::json!({
+                            "thinking": {
+                                "type": "enabled",
+                                "budgetTokens": thinking_budget
+                            }
+                        });
+                    } else {
+                        // OpenAI o-series models use reasoningEffort
+                        model_config["options"] = serde_json::json!({
+                            "reasoningEffort": "high"
+                        });
+                    }
                 } else if is_gpt5_model && user_reasoning_effort != "none" {
                     // Add reasoning effort for GPT-5.x models (Codex)
                     model_config["reasoning"] = serde_json::json!(true);
                     model_config["options"] = serde_json::json!({
-                        "reasoning": {
-                            "effort": user_reasoning_effort
-                        }
+                        "reasoningEffort": user_reasoning_effort
                     });
                 }
                 models_obj.insert(m.id.clone(), model_config);
             }
             
             // Create or update opencode.json with proxypal provider
-            // Use @ai-sdk/openai-compatible since CLIProxyAPI returns OpenAI-compatible format
+            // Use @ai-sdk/anthropic for native Anthropic API (better for Claude models with thinking)
             let opencode_config = serde_json::json!({
                 "$schema": "https://opencode.ai/config.json",
                 "provider": {
                     "proxypal": {
-                        "npm": "@ai-sdk/openai-compatible",
+                        "npm": "@ai-sdk/anthropic",
                         "name": "ProxyPal",
                         "options": {
                             "baseURL": endpoint_v1,

@@ -95,11 +95,9 @@ jobs:
               ;;
           esac
 
-          # Use patched fork until upstream merges fixes (#730, #731, #732)
-          CLIPROXYAPI_REPO="${CLIPROXYAPI_REPO:-heyhuynhgiabuu/CLIProxyAPI}"
-          echo "Downloading CLIProxyAPI for ${{ matrix.target }} from $CLIPROXYAPI_REPO..."
+          echo "Downloading CLIProxyAPI for ${{ matrix.target }}..."
           cd /tmp
-          gh release download --repo "$CLIPROXYAPI_REPO" --pattern "$ASSET_PATTERN" --clobber
+          gh release download --repo router-for-me/CLIProxyAPI --pattern "$ASSET_PATTERN" --clobber
 
           ARCHIVE=$(ls $ASSET_PATTERN 2>/dev/null | head -1)
           echo "Extracting $ARCHIVE..."
