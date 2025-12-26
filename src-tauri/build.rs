@@ -26,17 +26,40 @@ fn main() {
             println!("cargo:warning=Binary not found: {}", binary_name);
             println!("cargo:warning=Downloading from CLIProxyAPI releases...");
 
-            let script_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("scripts")
-                .join("download-binaries.sh");
+            #[cfg(windows)]
+            let status = {
+                let script_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("scripts")
+                    .join("download-binaries.ps1");
+                Command::new("powershell")
+                    .arg("-ExecutionPolicy")
+                    .arg("Bypass")
+                    .arg("-File")
+                    .arg(&script_path)
+                    .arg(&binary_name)
+                    .status()
+                    .expect("Failed to execute download script")
+            };
 
-            let status = Command::new("bash")
-                .arg(&script_path)
-                .arg(&binary_name)
-                .status()
-                .expect("Failed to execute download script");
+            #[cfg(not(windows))]
+            let status = {
+                let script_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("scripts")
+                    .join("download-binaries.sh");
+                Command::new("bash")
+                    .arg(&script_path)
+                    .arg(&binary_name)
+                    .status()
+                    .expect("Failed to execute download script")
+            };
 
             if !status.success() {
+                #[cfg(windows)]
+                panic!(
+                    "Failed to download binary: {}. Run scripts/download-binaries.ps1 manually.",
+                    binary_name
+                );
+                #[cfg(not(windows))]
                 panic!(
                     "Failed to download binary: {}. Run scripts/download-binaries.sh manually.",
                     binary_name
