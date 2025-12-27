@@ -7,7 +7,7 @@ pub struct SshConfig {
     pub host: String,
     pub port: u16,
     pub username: String,
-    pub password: Option<String>,
+    // Password auth is not supported in non-interactive mode. Use key_file.
     pub key_file: Option<String>,
     pub remote_port: u16,
     pub local_port: u16, // usually config.port (8317) but configurable

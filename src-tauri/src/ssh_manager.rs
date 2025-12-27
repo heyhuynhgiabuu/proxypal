@@ -66,7 +66,10 @@ impl SshManager {
                 cmd.arg("-o").arg("ServerAliveInterval=15");
                 cmd.arg("-o").arg("ServerAliveCountMax=3");
                 cmd.arg("-o").arg("ExitOnForwardFailure=yes");
-                cmd.arg("-o").arg("StrictHostKeyChecking=no");
+                // SECURITY: 'accept-new' auto-accepts the first key (good for automation)
+                // but rejects changed keys (prevents MITM).
+                // Requires OpenSSH 7.6+ (standard on Windows 10/11).
+                cmd.arg("-o").arg("StrictHostKeyChecking=accept-new");
                 cmd.arg("-o").arg("UserKnownHostsFile=/dev/null");
                 
                 cmd.arg("-R").arg(format!("{}:127.0.0.1:{}", config.remote_port, config.local_port));
@@ -84,8 +87,6 @@ impl SshManager {
                 cmd.arg(format!("{}@{}", config.username, config.host));
 
                 // Debug print
-                println!("[SSH Debug] Config: {:?}", config);
-                println!("[SSH Debug] Running: {:?}", cmd);
                 emit_status_clone("connecting", Some(format!("Connecting to {}...", config.host)));
 
                 // Setup pipes
