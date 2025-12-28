@@ -5346,42 +5346,115 @@ async fn get_auth_files(state: State<'_, AppState>) -> Result<Vec<AuthFile>, Str
     let port = state.config.lock().unwrap().port;
     let url = get_management_url(port, "auth-files");
     
-    let client = build_management_client();
-    let response = client
-        .get(&url)
-        .header("X-Management-Key", &get_management_key())
-        .send()
-        .await
-        .map_err(|e| format!("Failed to fetch auth files: {}", e))?;
+    // 1. Fetch active files from Management API
+    let mut files: Vec<AuthFile> = Vec::new();
     
-    if !response.status().is_success() {
-        return Ok(Vec::new());
+    // Only try to fetch if proxy is running
+    let proxy_running = state.proxy_status.lock().unwrap().running;
+    if proxy_running {
+        let client = build_management_client();
+        match client
+            .get(&url)
+            .header("X-Management-Key", &get_management_key())
+            .send()
+            .await 
+        {
+            Ok(response) => {
+                if response.status().is_success() {
+                    if let Ok(json) = response.json::<serde_json::Value>().await {
+                        let files_array = if let Some(f) = json.get("files") {
+                            f.clone()
+                        } else if json.is_array() {
+                            json
+                        } else {
+                            serde_json::Value::Array(Vec::new())
+                        };
+                        
+                        // Convert snake_case to camelCase
+                        if let Ok(json_str) = serde_json::to_string(&files_array) {
+                            let converted = json_str
+                                .replace("\"status_message\"", "\"statusMessage\"")
+                                .replace("\"runtime_only\"", "\"runtimeOnly\"")
+                                .replace("\"account_type\"", "\"accountType\"")
+                                .replace("\"created_at\"", "\"createdAt\"")
+                                .replace("\"updated_at\"", "\"updatedAt\"")
+                                .replace("\"last_refresh\"", "\"lastRefresh\"")
+                                .replace("\"success_count\"", "\"successCount\"")
+                                .replace("\"failure_count\"", "\"failureCount\"");
+                                
+                            if let Ok(parsed) = serde_json::from_str::<Vec<AuthFile>>(&converted) {
+                                files = parsed;
+                            }
+                        }
+                    }
+                }
+            },
+            Err(_) => {
+                // Ignore connection errors if proxy just stopped
+            }
+        }
     }
     
-    let json: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
+    // 2. Scan for disabled files (.json.disabled) in auth directory
+    let auth_dir = dirs::home_dir()
+        .ok_or("Could not find home directory")?
+        .join(".cli-proxy-api");
+        
+    if auth_dir.exists() {
+        if let Ok(entries) = std::fs::read_dir(&auth_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    if name.ends_with(".json.disabled") {
+                        // This is a disabled auth file
+                        if let Ok(content) = std::fs::read_to_string(&path) {
+                            if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) {
+                                // Try to extract provider/email for metadata
+                                let provider = json.get("provider")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("unknown")
+                                    .to_string();
+                                    
+                                let dummy_id = name.strip_suffix(".json.disabled").unwrap_or(name).to_string();
+                                
+                                // Create AuthFile entry for this disabled file
+                                let disabled_file = AuthFile {
+                                    id: dummy_id.clone(),
+                                    name: dummy_id,
+                                    provider,
+                                    status: "disabled".to_string(),
+                                    disabled: true,
+                                    unavailable: false,
+                                    runtime_only: false,
+                                    source: Some("file".to_string()),
+                                    path: Some(path.to_string_lossy().to_string()),
+                                    size: Some(entry.metadata().map(|m| m.len()).unwrap_or(0)),
+                                    modtime: Some(entry.metadata().ok()
+                                        .and_then(|m| m.modified().ok())
+                                        .map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339())
+                                        .unwrap_or_default()),
+                                    email: None, // Could parse from content if standard format
+                                    account_type: None,
+                                    account: None,
+                                    created_at: None,
+                                    updated_at: None,
+                                    last_refresh: None,
+                                    success_count: None,
+                                    failure_count: None,
+                                    label: None,
+                                    status_message: None,
+                                };
+                                
+                                files.push(disabled_file);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
     
-    // Management API returns { "files": [...] } or just an array
-    let files_array = if let Some(files) = json.get("files") {
-        files.clone()
-    } else if json.is_array() {
-        json
-    } else {
-        return Ok(Vec::new());
-    };
-    
-    // Convert snake_case from API to camelCase for frontend
-    let json_str = serde_json::to_string(&files_array).map_err(|e| e.to_string())?;
-    let converted = json_str
-        .replace("\"status_message\"", "\"statusMessage\"")
-        .replace("\"runtime_only\"", "\"runtimeOnly\"")
-        .replace("\"account_type\"", "\"accountType\"")
-        .replace("\"created_at\"", "\"createdAt\"")
-        .replace("\"updated_at\"", "\"updatedAt\"")
-        .replace("\"last_refresh\"", "\"lastRefresh\"")
-        .replace("\"success_count\"", "\"successCount\"")
-        .replace("\"failure_count\"", "\"failureCount\"");
-    
-    serde_json::from_str(&converted).map_err(|e| e.to_string())
+    Ok(files)
 }
 
 // Upload auth file
@@ -5434,6 +5507,19 @@ async fn upload_auth_file(state: State<'_, AppState>, file_path: String, provide
 // Delete auth file
 #[tauri::command]
 async fn delete_auth_file(state: State<'_, AppState>, file_id: String) -> Result<(), String> {
+    // Check if it's a disabled file first (file_id matches filename without extension usually)
+    let auth_dir = dirs::home_dir()
+        .ok_or("Could not find home directory")?
+        .join(".cli-proxy-api");
+        
+    let disabled_path = auth_dir.join(format!("{}.json.disabled", file_id));
+    if disabled_path.exists() {
+        std::fs::remove_file(disabled_path)
+            .map_err(|e| format!("Failed to delete disabled file: {}", e))?;
+        return Ok(());
+    }
+
+    // Otherwise try to delete via API
     let port = state.config.lock().unwrap().port;
     let url = format!("{}?name={}", get_management_url(port, "auth-files"), file_id);
     
@@ -5456,23 +5542,56 @@ async fn delete_auth_file(state: State<'_, AppState>, file_id: String) -> Result
 
 // Toggle auth file enabled/disabled
 #[tauri::command]
-async fn toggle_auth_file(state: State<'_, AppState>, file_id: String, disabled: bool) -> Result<(), String> {
-    let port = state.config.lock().unwrap().port;
-    let url = format!("{}/{}/disabled", get_management_url(port, "auth-files"), file_id);
+async fn toggle_auth_file(_state: State<'_, AppState>, file_id: String, disabled: bool) -> Result<(), String> {
+    let auth_dir = dirs::home_dir()
+        .ok_or("Could not find home directory")?
+        .join(".cli-proxy-api");
+        
+    if !auth_dir.exists() {
+        return Err("Auth directory not found".to_string());
+    }
     
-    let client = build_management_client();
-    let response = client
-        .put(&url)
-        .header("X-Management-Key", &get_management_key())
-        .json(&serde_json::json!({ "value": disabled }))
-        .send()
-        .await
-        .map_err(|e| format!("Failed to toggle auth file: {}", e))?;
+    // CAUTION: 'file_id' from the API is typically the filename WITHOUT .json extension
+    // But sometimes it might include it depending on how the ID was constructed.
+    // We try to find the source file.
     
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        return Err(format!("Failed to toggle auth file: {} - {}", status, text));
+    let enabled_path = auth_dir.join(format!("{}.json", file_id));
+    let disabled_path = auth_dir.join(format!("{}.json.disabled", file_id));
+    
+    if disabled {
+        // Disable: Rename .json -> .json.disabled
+        if enabled_path.exists() {
+            std::fs::rename(&enabled_path, &disabled_path)
+                .map_err(|e| format!("Failed to disable file: {}", e))?;
+        } else {
+            // Check if ID already had extension?
+             let enabled_path_asis = auth_dir.join(&file_id);
+             let disabled_path_asis = auth_dir.join(format!("{}.disabled", file_id));
+             
+             if enabled_path_asis.exists() {
+                 std::fs::rename(&enabled_path_asis, &disabled_path_asis)
+                    .map_err(|e| format!("Failed to disable file: {}", e))?;
+             } else {
+                 return Err("File not found to disable".to_string());
+             }
+        }
+    } else {
+        // Enable: Rename .json.disabled -> .json
+        if disabled_path.exists() {
+            std::fs::rename(&disabled_path, &enabled_path)
+                .map_err(|e| format!("Failed to enable file: {}", e))?;
+        } else {
+            // Check alt path
+             let enabled_path_asis = auth_dir.join(&file_id);
+             let disabled_path_asis = auth_dir.join(format!("{}.disabled", file_id));
+             
+              if disabled_path_asis.exists() {
+                  std::fs::rename(&disabled_path_asis, &enabled_path_asis)
+                    .map_err(|e| format!("Failed to enable file: {}", e))?;
+              } else {
+                  return Err("File not found to enable".to_string());
+              }
+        }
     }
     
     Ok(())

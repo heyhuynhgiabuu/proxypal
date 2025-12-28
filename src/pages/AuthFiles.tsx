@@ -9,6 +9,7 @@ import {
 	downloadAuthFile,
 	getAuthFiles,
 	refreshAuthStatus,
+	toggleAuthFile,
 	uploadAuthFile,
 } from "../lib/tauri";
 import { appStore } from "../stores/app";
@@ -112,6 +113,37 @@ export function AuthFilesPage() {
 			appStore.setAuthStatus(newAuthStatus);
 		} catch (err) {
 			toastStore.error(`Failed to delete: ${err}`);
+		}
+	};
+
+	const handleToggle = async (file: AuthFile) => {
+		try {
+			// Optimistic UI update
+			setFiles((prev) =>
+				prev.map((f) => {
+					if (f.id === file.id) {
+						return { ...f, disabled: !file.disabled };
+					}
+					return f;
+				}),
+			);
+
+			await toggleAuthFile(file.id, !file.disabled);
+
+			// Refresh auth status in background to ensure syncing
+			const newAuthStatus = await refreshAuthStatus();
+			appStore.setAuthStatus(newAuthStatus);
+		} catch (err) {
+			// Revert on error
+			setFiles((prev) =>
+				prev.map((f) => {
+					if (f.id === file.id) {
+						return { ...f, disabled: file.disabled };
+					}
+					return f;
+				}),
+			);
+			toastStore.error(`Failed to toggle file: ${err}`);
 		}
 	};
 
@@ -279,11 +311,10 @@ export function AuthFilesPage() {
 							<div class="flex items-center gap-2 mb-4 flex-wrap">
 								<button
 									onClick={() => setFilter("all")}
-									class={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-										filter() === "all"
-											? "bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-											: "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800"
-									}`}
+									class={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${filter() === "all"
+										? "bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+										: "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800"
+										}`}
 								>
 									All ({files().length})
 								</button>
@@ -291,11 +322,10 @@ export function AuthFilesPage() {
 									{(provider) => (
 										<button
 											onClick={() => setFilter(provider)}
-											class={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
-												filter() === provider
-													? "bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-													: "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800"
-											}`}
+											class={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${filter() === provider
+												? "bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+												: "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800"
+												}`}
 										>
 											<img
 												src={
@@ -352,11 +382,10 @@ export function AuthFilesPage() {
 								<For each={filteredFiles()}>
 									{(file) => (
 										<div
-											class={`rounded-xl border p-4 transition-colors ${
-												file.disabled
-													? "bg-gray-50 dark:bg-gray-800/30 border-gray-200 dark:border-gray-700 opacity-60"
-													: "bg-white dark:bg-gray-800/50 border-gray-200 dark:border-gray-700"
-											}`}
+											class={`rounded-xl border p-4 transition-colors ${file.disabled
+												? "bg-gray-50 dark:bg-gray-800/30 border-gray-200 dark:border-gray-700 opacity-60"
+												: "bg-white dark:bg-gray-800/50 border-gray-200 dark:border-gray-700"
+												}`}
 										>
 											<div class="flex items-start justify-between gap-4">
 												{/* Left: Info */}
@@ -380,10 +409,9 @@ export function AuthFilesPage() {
 																{file.name}
 															</span>
 															<span
-																class={`px-2 py-0.5 rounded text-xs font-medium border ${
-																	providerColors[file.provider.toLowerCase()] ||
+																class={`px-2 py-0.5 rounded text-xs font-medium border ${providerColors[file.provider.toLowerCase()] ||
 																	"bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-600"
-																}`}
+																	}`}
 															>
 																{file.provider}
 															</span>
@@ -480,6 +508,51 @@ export function AuthFilesPage() {
 																d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
 															/>
 														</svg>
+													</button>
+													<button
+														onClick={() => handleToggle(file)}
+														class={`p-2 rounded-lg transition-colors ${file.disabled
+															? "text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+															: "text-blue-500 dark:text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+															}`}
+														title={file.disabled ? "Enable" : "Disable"}
+													>
+														<Show when={!file.disabled}>
+															<svg
+																class="w-5 h-5"
+																fill="none"
+																viewBox="0 0 24 24"
+																stroke="currentColor"
+															>
+																<path
+																	stroke-linecap="round"
+																	stroke-linejoin="round"
+																	stroke-width="2"
+																	d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+																/>
+																<path
+																	stroke-linecap="round"
+																	stroke-linejoin="round"
+																	stroke-width="2"
+																	d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+																/>
+															</svg>
+														</Show>
+														<Show when={file.disabled}>
+															<svg
+																class="w-5 h-5"
+																fill="none"
+																viewBox="0 0 24 24"
+																stroke="currentColor"
+															>
+																<path
+																	stroke-linecap="round"
+																	stroke-linejoin="round"
+																	stroke-width="2"
+																	d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
+																/>
+															</svg>
+														</Show>
 													</button>
 													<button
 														onClick={() => handleDelete(file)}
