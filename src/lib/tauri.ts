@@ -34,6 +34,19 @@ export async function openOAuth(provider: Provider): Promise<string> {
 	return invoke("open_oauth", { provider });
 }
 
+export interface OAuthUrlResponse {
+	url: string;
+	state: string;
+}
+
+export async function getOAuthUrl(provider: Provider): Promise<OAuthUrlResponse> {
+	return invoke("get_oauth_url", { provider });
+}
+
+export async function openUrlInBrowser(url: string): Promise<void> {
+	return invoke("open_url_in_browser", { url });
+}
+
 export async function pollOAuthStatus(oauthState: string): Promise<boolean> {
 	return invoke("poll_oauth_status", { oauthState });
 }
@@ -1184,11 +1197,11 @@ export interface SshConfig {
 export interface SshStatusUpdate {
 	id: string;
 	status:
-		| "connected"
-		| "disconnected"
-		| "error"
-		| "reconnecting"
-		| "connecting";
+	| "connected"
+	| "disconnected"
+	| "error"
+	| "reconnecting"
+	| "connecting";
 	message?: string;
 }
 

@@ -1,11 +1,14 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { createSignal, onCleanup } from "solid-js";
 import { ProviderCard } from "../components/ProviderCard";
+import { OAuthModal } from "../components/OAuthModal";
 import { Button } from "../components/ui";
 import {
 	importVertexCredential,
-	openOAuth,
+	getOAuthUrl,
+	openUrlInBrowser,
 	type Provider,
+	type OAuthUrlResponse,
 	pollOAuthStatus,
 	refreshAuthStatus,
 	startProxy,
@@ -69,8 +72,18 @@ export function WelcomePage() {
 	} = appStore;
 	const [connecting, setConnecting] = createSignal<Provider | null>(null);
 
-	const handleConnect = async (provider: Provider) => {
-		// Auto-start proxy if not running
+	// OAuth Modal state
+	const [oauthModalProvider, setOauthModalProvider] = createSignal<Provider | null>(null);
+	const [oauthUrlData, setOauthUrlData] = createSignal<OAuthUrlResponse | null>(null);
+	const [oauthLoading, setOauthLoading] = createSignal(false);
+
+	const getProviderName = (provider: Provider): string => {
+		const found = providers.find(p => p.provider === provider);
+		return found?.name || provider;
+	};
+
+	// Ensure proxy is running
+	const ensureProxyRunning = async (): Promise<boolean> => {
 		if (!proxyStatus().running) {
 			toastStore.info("Starting proxy...", "Please wait");
 			try {
@@ -93,12 +106,19 @@ export function WelcomePage() {
 					}
 					await new Promise((resolve) => setTimeout(resolve, 200));
 				}
+				return true;
 			} catch (error) {
 				console.error("Failed to start proxy:", error);
 				toastStore.error("Failed to start proxy", String(error));
-				return;
+				return false;
 			}
 		}
+		return true;
+	};
+
+	const handleConnect = async (provider: Provider) => {
+		// Ensure proxy is running first
+		if (!await ensureProxyRunning()) return;
 
 		// Vertex uses service account import, not OAuth
 		if (provider === "vertex") {
@@ -138,34 +158,58 @@ export function WelcomePage() {
 			return;
 		}
 
+		// For OAuth providers, get the URL first and show modal
 		setConnecting(provider);
-		toastStore.info(
-			`Connecting to ${provider}...`,
-			"Complete authentication in your browser",
-		);
+		try {
+			const urlData = await getOAuthUrl(provider);
+			setOauthUrlData(urlData);
+			setOauthModalProvider(provider);
+			setConnecting(null);
+		} catch (error) {
+			console.error("Failed to get OAuth URL:", error);
+			setConnecting(null);
+			toastStore.error("Connection failed", String(error));
+		}
+	};
+
+	const handleStartOAuth = async () => {
+		const provider = oauthModalProvider();
+		const urlData = oauthUrlData();
+		if (!provider || !urlData) return;
+
+		setOauthLoading(true);
 
 		try {
-			const oauthState = await openOAuth(provider);
+			// Open the browser with the OAuth URL
+			await openUrlInBrowser(urlData.url);
+			toastStore.info(
+				`Connecting to ${getProviderName(provider)}...`,
+				"Complete authentication in your browser",
+			);
+
+			// Start polling for OAuth completion
 			let attempts = 0;
 			const maxAttempts = 120;
 			const pollInterval = setInterval(async () => {
 				attempts++;
 				try {
-					const completed = await pollOAuthStatus(oauthState);
+					const completed = await pollOAuthStatus(urlData.state);
 					if (completed) {
 						clearInterval(pollInterval);
 						const newAuth = await refreshAuthStatus();
 						setAuthStatus(newAuth);
-						setConnecting(null);
+						setOauthLoading(false);
+						setOauthModalProvider(null);
+						setOauthUrlData(null);
 						toastStore.success(
-							`${provider} connected!`,
+							`${getProviderName(provider)} connected!`,
 							"You can now use this provider",
 						);
 						// Auto-navigate to dashboard after successful connection
 						setCurrentPage("dashboard");
 					} else if (attempts >= maxAttempts) {
 						clearInterval(pollInterval);
-						setConnecting(null);
+						setOauthLoading(false);
 						toastStore.error("Connection timeout", "Please try again");
 					}
 				} catch (err) {
@@ -174,10 +218,51 @@ export function WelcomePage() {
 			}, 1000);
 			onCleanup(() => clearInterval(pollInterval));
 		} catch (error) {
-			console.error("Failed to start OAuth:", error);
-			setConnecting(null);
+			console.error("Failed to open OAuth:", error);
+			setOauthLoading(false);
 			toastStore.error("Connection failed", String(error));
 		}
+	};
+
+	const handleAlreadyAuthorized = async () => {
+		const provider = oauthModalProvider();
+		const urlData = oauthUrlData();
+		if (!provider || !urlData) return;
+
+		setOauthLoading(true);
+
+		// Check if auth is already complete
+		try {
+			const completed = await pollOAuthStatus(urlData.state);
+			if (completed) {
+				const newAuth = await refreshAuthStatus();
+				setAuthStatus(newAuth);
+				setOauthLoading(false);
+				setOauthModalProvider(null);
+				setOauthUrlData(null);
+				toastStore.success(
+					`${getProviderName(provider)} connected!`,
+					"You can now use this provider",
+				);
+				setCurrentPage("dashboard");
+			} else {
+				setOauthLoading(false);
+				toastStore.warning(
+					"Not authorized yet",
+					"Please complete authorization in your browser first",
+				);
+			}
+		} catch (err) {
+			console.error("Check auth error:", err);
+			setOauthLoading(false);
+			toastStore.error("Failed to check authorization", String(err));
+		}
+	};
+
+	const handleCancelOAuth = () => {
+		setOauthModalProvider(null);
+		setOauthUrlData(null);
+		setOauthLoading(false);
 	};
 
 	const hasAnyConnection = () => {
@@ -283,6 +368,17 @@ export function WelcomePage() {
 					Powered by CLIProxyAPI • Your data stays local
 				</p>
 			</footer>
+
+			{/* OAuth Modal */}
+			<OAuthModal
+				provider={oauthModalProvider()}
+				providerName={oauthModalProvider() ? getProviderName(oauthModalProvider()!) : ""}
+				authUrl={oauthUrlData()?.url || ""}
+				onStartOAuth={handleStartOAuth}
+				onCancel={handleCancelOAuth}
+				onAlreadyAuthorized={handleAlreadyAuthorized}
+				loading={oauthLoading()}
+			/>
 		</div>
 	);
 }

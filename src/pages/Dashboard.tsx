@@ -13,6 +13,7 @@ import { openCommandPalette } from "../components/CommandPalette";
 import { CopilotCard } from "../components/CopilotCard";
 import { BarChart } from "../components/charts/BarChart";
 import { HealthIndicator } from "../components/HealthIndicator";
+import { OAuthModal } from "../components/OAuthModal";
 import { OpenCodeKitBanner } from "../components/OpenCodeKitBanner";
 import { StatusIndicator } from "../components/StatusIndicator";
 import { Button } from "../components/ui";
@@ -28,8 +29,10 @@ import {
 	getUsageStats,
 	importVertexCredential,
 	onRequestLog,
-	openOAuth,
+	getOAuthUrl,
+	openUrlInBrowser,
 	type Provider,
+	type OAuthUrlResponse,
 	pollOAuthStatus,
 	refreshAuthStatus,
 	startProxy,
@@ -164,6 +167,16 @@ export function DashboardPage() {
 	// Use centralized store for history
 	const history = requestStore.history;
 	const [stats, setStats] = createSignal<UsageStats | null>(null);
+
+	// OAuth Modal state
+	const [oauthModalProvider, setOauthModalProvider] = createSignal<Provider | null>(null);
+	const [oauthUrlData, setOauthUrlData] = createSignal<OAuthUrlResponse | null>(null);
+	const [oauthLoading, setOauthLoading] = createSignal(false);
+
+	const getProviderName = (provider: Provider): string => {
+		const found = providers.find(p => p.provider === provider);
+		return found?.name || provider;
+	};
 
 	// Copilot config handler
 	const handleCopilotConfigChange = (copilotConfig: CopilotConfig) => {
@@ -321,25 +334,49 @@ export function DashboardPage() {
 			return;
 		}
 
+		// For OAuth providers, get the URL first and show modal
 		setConnecting(provider);
-		toastStore.info(
-			`Connecting to ${provider}...`,
-			"Complete authentication in your browser",
-		);
+		try {
+			const urlData = await getOAuthUrl(provider);
+			setOauthUrlData(urlData);
+			setOauthModalProvider(provider);
+			setConnecting(null);
+		} catch (error) {
+			console.error("Failed to get OAuth URL:", error);
+			setConnecting(null);
+			toastStore.error("Connection failed", String(error));
+		}
+	};
+
+	const handleStartOAuth = async () => {
+		const provider = oauthModalProvider();
+		const urlData = oauthUrlData();
+		if (!provider || !urlData) return;
+
+		setOauthLoading(true);
 
 		try {
-			const oauthState = await openOAuth(provider);
+			// Open the browser with the OAuth URL
+			await openUrlInBrowser(urlData.url);
+			toastStore.info(
+				`Connecting to ${getProviderName(provider)}...`,
+				"Complete authentication in your browser",
+			);
+
+			// Start polling for OAuth completion
 			let attempts = 0;
 			const maxAttempts = 120;
 			const pollInterval = setInterval(async () => {
 				attempts++;
 				try {
-					const completed = await pollOAuthStatus(oauthState);
+					const completed = await pollOAuthStatus(urlData.state);
 					if (completed) {
 						clearInterval(pollInterval);
 						const newAuth = await refreshAuthStatus();
 						setAuthStatus(newAuth);
-						setConnecting(null);
+						setOauthLoading(false);
+						setOauthModalProvider(null);
+						setOauthUrlData(null);
 						setRecentlyConnected((prev) => new Set([...prev, provider]));
 						setTimeout(() => {
 							setRecentlyConnected((prev) => {
@@ -349,12 +386,12 @@ export function DashboardPage() {
 							});
 						}, 2000);
 						toastStore.success(
-							`${provider} connected!`,
+							`${getProviderName(provider)} connected!`,
 							"You can now use this provider",
 						);
 					} else if (attempts >= maxAttempts) {
 						clearInterval(pollInterval);
-						setConnecting(null);
+						setOauthLoading(false);
 						toastStore.error("Connection timeout", "Please try again");
 					}
 				} catch (err) {
@@ -363,10 +400,58 @@ export function DashboardPage() {
 			}, 1000);
 			onCleanup(() => clearInterval(pollInterval));
 		} catch (error) {
-			console.error("Failed to start OAuth:", error);
-			setConnecting(null);
+			console.error("Failed to open OAuth:", error);
+			setOauthLoading(false);
 			toastStore.error("Connection failed", String(error));
 		}
+	};
+
+	const handleAlreadyAuthorized = async () => {
+		const provider = oauthModalProvider();
+		const urlData = oauthUrlData();
+		if (!provider || !urlData) return;
+
+		setOauthLoading(true);
+
+		// Check if auth is already complete
+		try {
+			const completed = await pollOAuthStatus(urlData.state);
+			if (completed) {
+				const newAuth = await refreshAuthStatus();
+				setAuthStatus(newAuth);
+				setOauthLoading(false);
+				setOauthModalProvider(null);
+				setOauthUrlData(null);
+				setRecentlyConnected((prev) => new Set([...prev, provider]));
+				setTimeout(() => {
+					setRecentlyConnected((prev) => {
+						const next = new Set(prev);
+						next.delete(provider);
+						return next;
+					});
+				}, 2000);
+				toastStore.success(
+					`${getProviderName(provider)} connected!`,
+					"You can now use this provider",
+				);
+			} else {
+				setOauthLoading(false);
+				toastStore.warning(
+					"Not authorized yet",
+					"Please complete authorization in your browser first",
+				);
+			}
+		} catch (err) {
+			console.error("Check auth error:", err);
+			setOauthLoading(false);
+			toastStore.error("Failed to check authorization", String(err));
+		}
+	};
+
+	const handleCancelOAuth = () => {
+		setOauthModalProvider(null);
+		setOauthUrlData(null);
+		setOauthLoading(false);
 	};
 
 	const handleDisconnect = async (provider: Provider) => {
@@ -1019,6 +1104,17 @@ export function DashboardPage() {
 					</Show>
 				</div>
 			</main>
+
+			{/* OAuth Modal */}
+			<OAuthModal
+				provider={oauthModalProvider()}
+				providerName={oauthModalProvider() ? getProviderName(oauthModalProvider()!) : ""}
+				authUrl={oauthUrlData()?.url || ""}
+				onStartOAuth={handleStartOAuth}
+				onCancel={handleCancelOAuth}
+				onAlreadyAuthorized={handleAlreadyAuthorized}
+				loading={oauthLoading()}
+			/>
 		</div>
 	);
 }
@@ -1692,3 +1788,4 @@ function QuotaWidget(props: { authStatus: { antigravity: number } }) {
 		</div>
 	);
 }
+

@@ -22,7 +22,7 @@ use crate::types::{
 use crate::ssh_manager::SshManager;
 use crate::cloudflare_manager::CloudflareManager;
 use crate::utils::{estimate_request_cost, detect_provider_from_model, detect_provider_from_path, extract_model_from_path};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -2721,6 +2721,89 @@ async fn import_usage_stats(state: State<'_, AppState>, data: serde_json::Value)
         .map_err(|e| format!("Failed to parse import response: {}", e))?;
     
     Ok(body)
+}
+
+/// OAuth URL response for frontend modal
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OAuthUrlResponse {
+    pub url: String,
+    pub state: String,
+}
+
+/// Get OAuth URL without opening browser (for modal flow)
+#[tauri::command]
+async fn get_oauth_url(state: State<'_, AppState>, provider: String) -> Result<OAuthUrlResponse, String> {
+    // Get proxy port from config
+    let port = {
+        let config = state.config.lock().unwrap();
+        config.port
+    };
+
+    // Get the OAuth URL from CLIProxyAPI's Management API
+    // Add is_webui=true to use the embedded callback forwarder
+    // Use 127.0.0.1 consistently (not localhost) to avoid access control issues
+    let endpoint = match provider.as_str() {
+        "claude" => format!("http://127.0.0.1:{}/v0/management/anthropic-auth-url?is_webui=true", port),
+        "openai" => format!("http://127.0.0.1:{}/v0/management/codex-auth-url?is_webui=true", port),
+        "gemini" => format!("http://127.0.0.1:{}/v0/management/gemini-cli-auth-url?is_webui=true", port),
+        "qwen" => format!("http://127.0.0.1:{}/v0/management/qwen-auth-url?is_webui=true", port),
+        "iflow" => format!("http://127.0.0.1:{}/v0/management/iflow-auth-url?is_webui=true", port),
+        "antigravity" => format!("http://127.0.0.1:{}/v0/management/antigravity-auth-url?is_webui=true", port),
+        "vertex" => return Err("Vertex uses service account import, not OAuth. Use import_vertex_credential instead.".to_string()),
+        _ => return Err(format!("Unknown provider: {}", provider)),
+    };
+
+    // Make HTTP request to get OAuth URL
+    let client = reqwest::Client::new();
+    let response = client
+        .get(&endpoint)
+        .header("X-Management-Key", &get_management_key())
+        .send()
+        .await
+        .map_err(|e| format!("Failed to get OAuth URL: {}. Is the proxy running?", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Management API returned error: {}", response.status()));
+    }
+
+    // Parse response to get URL and state
+    let body: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+    let oauth_url = body["url"]
+        .as_str()
+        .ok_or("No URL in response")?
+        .to_string();
+    
+    let oauth_state = body["state"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+
+    // Store pending OAuth state
+    {
+        let mut pending = state.pending_oauth.lock().unwrap();
+        *pending = Some(OAuthState {
+            provider: provider.clone(),
+            state: oauth_state.clone(),
+        });
+    }
+
+    Ok(OAuthUrlResponse {
+        url: oauth_url,
+        state: oauth_state,
+    })
+}
+
+/// Open a URL in the default browser
+#[tauri::command]
+async fn open_url_in_browser(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    app.opener()
+        .open_url(&url, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -6303,6 +6386,8 @@ pub fn run() {
             get_auth_status,
             refresh_auth_status,
             open_oauth,
+            get_oauth_url,
+            open_url_in_browser,
             poll_oauth_status,
             complete_oauth,
             disconnect_provider,
