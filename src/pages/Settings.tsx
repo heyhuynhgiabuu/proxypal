@@ -37,6 +37,7 @@ import {
 	appendToShellProfile,
 	type CopilotApiDetection,
 	checkForUpdates,
+	checkCoreUpdate,
 	configureCliAgent,
 	deleteCloudflareConfig,
 	deleteOAuthExcludedModels,
@@ -49,6 +50,8 @@ import {
 	getCloseToTray,
 	getConfig,
 	getConfigYaml,
+	type CoreUpdateInfo,
+	getCoreVersion,
 	getForceModelMappings,
 	getLogSize,
 	getMaxRetryInterval,
@@ -82,6 +85,7 @@ import {
 	type UpdateInfo,
 	type UpdateProgress,
 	type UpdaterSupport,
+	updateCore,
 } from "../lib/tauri";
 
 import { appStore } from "../stores/app";
@@ -312,6 +316,13 @@ export function SettingsPage() {
 	const [updaterSupport, setUpdaterSupport] =
 		createSignal<UpdaterSupport | null>(null);
 
+	// Core Update (CLIProxyAPI) state
+	const [coreUpdateInfo, setCoreUpdateInfo] =
+		createSignal<CoreUpdateInfo | null>(null);
+	const [checkingCoreUpdate, setCheckingCoreUpdate] = createSignal(false);
+	const [installingCoreUpdate, setInstallingCoreUpdate] = createSignal(false);
+	const [coreVersion, setCoreVersion] = createSignal<string | null>(null);
+
 	// Check updater support on mount
 	createEffect(async () => {
 		try {
@@ -319,6 +330,16 @@ export function SettingsPage() {
 			setUpdaterSupport(support);
 		} catch (error) {
 			console.error("Failed to check updater support:", error);
+		}
+	});
+
+	// Load core version on mount
+	createEffect(async () => {
+		try {
+			const version = await getCoreVersion();
+			setCoreVersion(version);
+		} catch (error) {
+			console.error("Failed to get core version:", error);
 		}
 	});
 
@@ -601,6 +622,58 @@ export function SettingsPage() {
 			toastStore.error(`Update failed: ${error}`);
 			setInstallingUpdate(false);
 			setUpdateProgress(null);
+		}
+	};
+
+	// Check for core (CLIProxyAPI) updates
+	const handleCheckCoreUpdate = async () => {
+		setCheckingCoreUpdate(true);
+		setCoreUpdateInfo(null);
+		try {
+			const info = await checkCoreUpdate();
+			setCoreUpdateInfo(info);
+			if (info.updateAvailable) {
+				toastStore.success(`Core update available: v${info.latestVersion}`);
+			} else {
+				toastStore.success(
+					`Core is up to date (v${info.currentVersion})`,
+				);
+			}
+		} catch (error) {
+			console.error("Core update check failed:", error);
+			toastStore.error(`Core update check failed: ${error}`);
+		} finally {
+			setCheckingCoreUpdate(false);
+		}
+	};
+
+	// Install core (CLIProxyAPI) update
+	const handleInstallCoreUpdate = async () => {
+		// Warn user if proxy is running
+		if (appStore.proxyStatus().running) {
+			const confirmed = confirm(
+				"The proxy is currently running and will be stopped to install the update. Continue?",
+			);
+			if (!confirmed) return;
+		}
+
+		setInstallingCoreUpdate(true);
+		try {
+			const result = await updateCore();
+			if (result.success) {
+				toastStore.success(result.message);
+				setCoreVersion(result.version);
+				setCoreUpdateInfo(null);
+				// Refresh core update info to clear the update available indicator
+				await handleCheckCoreUpdate();
+			} else {
+				toastStore.error(`Update failed: ${result.message}`);
+			}
+		} catch (error) {
+			console.error("Core update installation failed:", error);
+			toastStore.error(`Core update failed: ${error}`);
+		} finally {
+			setInstallingCoreUpdate(false);
 		}
 	};
 
@@ -1545,6 +1618,214 @@ export function SettingsPage() {
 								onChange={handleCloseToTrayChange}
 								disabled={savingCloseToTray()}
 							/>
+						</div>
+					</div>
+
+					{/* Core Update (CLIProxyAPI) */}
+					<div
+						class="space-y-4"
+						classList={{ hidden: activeTab() !== "general" }}
+					>
+						<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+							Proxy Core Updates
+						</h2>
+
+						<div class="space-y-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+							<div class="flex items-center justify-between">
+								<div class="flex-1">
+									<p class="text-sm font-medium text-gray-700 dark:text-gray-300">
+										CLIProxyAPI Core
+									</p>
+									<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+										<Show
+											when={coreVersion()}
+											fallback="Checking version..."
+										>
+											Current version: v{coreVersion()}
+										</Show>
+									</p>
+								</div>
+								<Button
+									variant="secondary"
+									size="sm"
+									onClick={handleCheckCoreUpdate}
+									disabled={checkingCoreUpdate() || installingCoreUpdate()}
+								>
+									<Show
+										when={checkingCoreUpdate()}
+										fallback={
+											<>
+												<svg
+													class="w-4 h-4 mr-1.5"
+													fill="none"
+													stroke="currentColor"
+													viewBox="0 0 24 24"
+												>
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														stroke-width="2"
+														d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+													/>
+												</svg>
+												Check for Update
+											</>
+										}
+									>
+										<svg
+											class="w-4 h-4 animate-spin mr-1.5"
+											fill="none"
+											viewBox="0 0 24 24"
+										>
+											<circle
+												class="opacity-25"
+												cx="12"
+												cy="12"
+												r="10"
+												stroke="currentColor"
+												stroke-width="4"
+											/>
+											<path
+												class="opacity-75"
+												fill="currentColor"
+												d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+											/>
+										</svg>
+										Checking...
+									</Show>
+								</Button>
+							</div>
+
+							{/* Update available */}
+							<Show when={coreUpdateInfo()?.updateAvailable}>
+								<div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+									<div class="flex items-start gap-3 p-3 bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 rounded-lg">
+										<svg
+											class="w-5 h-5 text-brand-500 mt-0.5 shrink-0"
+											fill="none"
+											stroke="currentColor"
+											viewBox="0 0 24 24"
+										>
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												stroke-width="2"
+												d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"
+											/>
+										</svg>
+										<div class="flex-1 min-w-0">
+											<p class="text-sm font-medium text-brand-700 dark:text-brand-300">
+												Core Update Available: v{coreUpdateInfo()?.latestVersion}
+											</p>
+											<Show when={appStore.proxyStatus().running}>
+												<p class="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
+													<svg
+														class="w-3.5 h-3.5"
+														fill="none"
+														stroke="currentColor"
+														viewBox="0 0 24 24"
+													>
+														<path
+															stroke-linecap="round"
+															stroke-linejoin="round"
+															stroke-width="2"
+															d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+														/>
+													</svg>
+													The proxy will be stopped to install the update
+												</p>
+											</Show>
+											<Show when={coreUpdateInfo()?.releaseNotes}>
+												<details class="mt-2">
+													<summary class="cursor-pointer text-xs text-brand-600 dark:text-brand-400">
+														Release notes
+													</summary>
+													<p class="text-xs text-brand-600 dark:text-brand-400 mt-1 whitespace-pre-wrap">
+														{coreUpdateInfo()?.releaseNotes?.slice(0, 500)}
+														{(coreUpdateInfo()?.releaseNotes?.length || 0) > 500 && "..."}
+													</p>
+												</details>
+											</Show>
+										</div>
+									</div>
+
+									{/* Install button */}
+									<div class="mt-3">
+										<Button
+											variant="primary"
+											size="sm"
+											onClick={handleInstallCoreUpdate}
+											disabled={installingCoreUpdate()}
+											class="w-full"
+										>
+											<Show
+												when={installingCoreUpdate()}
+												fallback={
+													<>
+														<svg
+															class="w-4 h-4 mr-1.5"
+															fill="none"
+															stroke="currentColor"
+															viewBox="0 0 24 24"
+														>
+															<path
+																stroke-linecap="round"
+																stroke-linejoin="round"
+																stroke-width="2"
+																d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+															/>
+														</svg>
+														Download & Install
+													</>
+												}
+											>
+												<svg
+													class="w-4 h-4 animate-spin mr-1.5"
+													fill="none"
+													viewBox="0 0 24 24"
+												>
+													<circle
+														class="opacity-25"
+														cx="12"
+														cy="12"
+														r="10"
+														stroke="currentColor"
+														stroke-width="4"
+													/>
+													<path
+														class="opacity-75"
+														fill="currentColor"
+														d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+													/>
+												</svg>
+												Installing...
+											</Show>
+										</Button>
+									</div>
+								</div>
+							</Show>
+
+							{/* Already up to date */}
+							<Show when={coreUpdateInfo() && !coreUpdateInfo()?.updateAvailable}>
+								<div class="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+									<svg
+										class="w-5 h-5 text-green-500"
+										fill="none"
+										stroke="currentColor"
+										viewBox="0 0 24 24"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											stroke-width="2"
+											d="M5 13l4 4L19 7"
+										/>
+									</svg>
+									<p class="text-sm text-green-700 dark:text-green-300">
+										Core is up to date (v{coreUpdateInfo()?.currentVersion})
+									</p>
+								</div>
+							</Show>
 						</div>
 					</div>
 
