@@ -6813,6 +6813,400 @@ fn get_tool_setup_info(tool_id: String, state: State<AppState>) -> Result<serde_
     Ok(info)
 }
 
+// ============================================================================
+// Core Update (CLIProxyAPI)
+// ============================================================================
+
+/// GitHub repository for CLIProxyAPI releases
+const CLIPROXYAPI_REPO: &str = "router-for-me/CLIProxyAPI";
+
+/// Regex pattern for extracting version numbers (compiled once)
+lazy_static::lazy_static! {
+    static ref VERSION_REGEX: Regex = Regex::new(r"v?(\d+\.\d+\.\d+)").unwrap();
+}
+
+/// Get the current installed CLIProxyAPI version by running the binary with --version
+#[tauri::command]
+async fn get_core_version(app: tauri::AppHandle) -> Result<String, String> {
+    // Get the path to the sidecar binary
+    let sidecar_path = app
+        .path()
+        .resource_dir()
+        .map_err(|e| format!("Failed to get resource dir: {}", e))?;
+    
+    // Try to find the cliproxyapi binary
+    #[cfg(target_os = "windows")]
+    let binary_name = "cliproxyapi.exe";
+    #[cfg(not(target_os = "windows"))]
+    let binary_name = "cliproxyapi";
+    
+    // Check in external bin path (standard location for sidecars)
+    let binary_path = sidecar_path.join(binary_name);
+    
+    if !binary_path.exists() {
+        // Try alternative paths
+        let alt_path = sidecar_path.join("binaries").join(binary_name);
+        if alt_path.exists() {
+            return run_version_command(&alt_path).await;
+        }
+        return Err(format!("CLIProxyAPI binary not found at {:?}", binary_path));
+    }
+    
+    run_version_command(&binary_path).await
+}
+
+async fn run_version_command(binary_path: &std::path::Path) -> Result<String, String> {
+    let mut cmd = std::process::Command::new(binary_path);
+    cmd.arg("--version");
+    
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Failed to run cliproxyapi --version: {}", e))?;
+    
+    let version_output = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr_output = String::from_utf8_lossy(&output.stderr).to_string();
+    
+    // Parse version from output (format: "CLIProxyAPI version x.y.z" or just "x.y.z")
+    let combined = format!("{}{}", version_output, stderr_output);
+    
+    // Try to extract version number
+    for line in combined.lines() {
+        let line = line.trim();
+        // Look for version pattern
+        if let Some(version) = extract_version_from_line(line) {
+            return Ok(version);
+        }
+    }
+    
+    // Return trimmed output if we couldn't parse a version
+    if !version_output.trim().is_empty() {
+        Ok(version_output.trim().to_string())
+    } else {
+        Err("Could not determine version".to_string())
+    }
+}
+
+fn extract_version_from_line(line: &str) -> Option<String> {
+    // Match patterns like "v1.2.3", "1.2.3", "version 1.2.3", "CLIProxyAPI version 1.2.3"
+    VERSION_REGEX.captures(line)
+        .and_then(|caps| caps.get(1))
+        .map(|m| m.as_str().to_string())
+}
+
+/// Check for available CLIProxyAPI update from GitHub releases
+#[tauri::command]
+async fn check_core_update(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    // Get current version
+    let current_version = get_core_version(app).await.unwrap_or_else(|_| "unknown".to_string());
+    
+    // Fetch latest release from GitHub API
+    let client = reqwest::Client::new();
+    let url = format!("https://api.github.com/repos/{}/releases/latest", CLIPROXYAPI_REPO);
+    
+    let response = client
+        .get(&url)
+        .header("User-Agent", "ProxyPal")
+        .header("Accept", "application/vnd.github.v3+json")
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to check for updates: {}", e))?;
+    
+    if !response.status().is_success() {
+        return Err(format!("GitHub API returned status: {}", response.status()));
+    }
+    
+    let release: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse release info: {}", e))?;
+    
+    let latest_version = release["tag_name"]
+        .as_str()
+        .unwrap_or("")
+        .trim_start_matches('v')
+        .to_string();
+    
+    let release_notes = release["body"].as_str().unwrap_or("").to_string();
+    let published_at = release["published_at"].as_str().unwrap_or("").to_string();
+    
+    // Compare versions
+    let update_available = if current_version == "unknown" {
+        false
+    } else {
+        is_newer_version(&latest_version, &current_version)
+    };
+    
+    Ok(serde_json::json!({
+        "currentVersion": current_version,
+        "latestVersion": latest_version,
+        "updateAvailable": update_available,
+        "releaseNotes": release_notes,
+        "publishedAt": published_at
+    }))
+}
+
+/// Compare two semver versions (major.minor.patch), returns true if `new_ver` is newer than `current`.
+/// Note: This only handles standard x.y.z versions. Pre-release tags (e.g., -alpha, -rc1) are ignored.
+/// CLIProxyAPI uses standard semver without pre-release tags.
+fn is_newer_version(new_ver: &str, current: &str) -> bool {
+    let parse_version = |v: &str| -> Vec<u32> {
+        // Strip any pre-release suffix (e.g., "1.2.3-alpha" -> "1.2.3")
+        let version_core = v.split('-').next().unwrap_or(v);
+        version_core
+            .split('.')
+            .filter_map(|s| s.parse().ok())
+            .collect()
+    };
+    
+    let new_parts = parse_version(new_ver);
+    let current_parts = parse_version(current);
+    
+    // Compare up to 3 components (major, minor, patch)
+    for i in 0..3 {
+        let new_num = new_parts.get(i).copied().unwrap_or(0);
+        let current_num = current_parts.get(i).copied().unwrap_or(0);
+        
+        if new_num > current_num {
+            return true;
+        } else if new_num < current_num {
+            return false;
+        }
+    }
+    
+    false
+}
+
+/// Download and install the latest CLIProxyAPI binary
+#[tauri::command]
+async fn update_core(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    // First, stop the proxy if it's running
+    let was_running = {
+        let status = state.proxy_status.lock().unwrap();
+        status.running
+    };
+    
+    if was_running {
+        // Stop the proxy
+        {
+            let mut process = state.proxy_process.lock().unwrap();
+            if let Some(child) = process.take() {
+                let _ = child.kill();
+            }
+        }
+        
+        // Update status
+        {
+            let mut status = state.proxy_status.lock().unwrap();
+            status.running = false;
+        }
+        
+        // Wait for process to fully terminate
+        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+    }
+    
+    // Fetch latest release info
+    let client = reqwest::Client::new();
+    let url = format!("https://api.github.com/repos/{}/releases/latest", CLIPROXYAPI_REPO);
+    
+    let response = client
+        .get(&url)
+        .header("User-Agent", "ProxyPal")
+        .header("Accept", "application/vnd.github.v3+json")
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch release info: {}", e))?;
+    
+    let release: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse release info: {}", e))?;
+    
+    let version = release["tag_name"]
+        .as_str()
+        .unwrap_or("")
+        .trim_start_matches('v')
+        .to_string();
+    
+    // Determine the correct asset based on platform
+    let (asset_name, archive_type) = get_asset_name_for_platform(&version)?;
+    
+    // Find download URL
+    let assets = release["assets"].as_array().ok_or("No assets found")?;
+    let download_url = assets
+        .iter()
+        .find(|asset| asset["name"].as_str() == Some(&asset_name))
+        .and_then(|asset| asset["browser_download_url"].as_str())
+        .ok_or_else(|| format!("Asset {} not found in release", asset_name))?;
+    
+    // Download the asset
+    println!("[CoreUpdate] Downloading {} from {}", asset_name, download_url);
+    let response = client
+        .get(download_url)
+        .header("User-Agent", "ProxyPal")
+        .timeout(std::time::Duration::from_secs(300))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to download update: {}", e))?;
+    
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read update data: {}", e))?;
+    
+    // Create temp directory for extraction
+    let temp_dir = std::env::temp_dir().join(format!("proxypal-core-update-{}", version));
+    if temp_dir.exists() {
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+    std::fs::create_dir_all(&temp_dir).map_err(|e| format!("Failed to create temp dir: {}", e))?;
+    
+    let archive_path = temp_dir.join(&asset_name);
+    std::fs::write(&archive_path, &bytes).map_err(|e| format!("Failed to write archive: {}", e))?;
+    
+    // Extract the archive
+    extract_archive(&archive_path, &temp_dir, &archive_type)?;
+    
+    // Find the binary in the extracted files
+    #[cfg(target_os = "windows")]
+    let binary_name = "CLIProxyAPI.exe";
+    #[cfg(not(target_os = "windows"))]
+    let binary_name = "CLIProxyAPI";
+    
+    let extracted_binary = temp_dir.join(binary_name);
+    if !extracted_binary.exists() {
+        return Err(format!("Binary {} not found in extracted archive", binary_name));
+    }
+    
+    // Get the target path for the sidecar
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|e| format!("Failed to get resource dir: {}", e))?;
+    
+    #[cfg(target_os = "windows")]
+    let target_binary_name = "cliproxyapi.exe";
+    #[cfg(not(target_os = "windows"))]
+    let target_binary_name = "cliproxyapi";
+    
+    let target_path = resource_dir.join(target_binary_name);
+    
+    // Backup old binary
+    let backup_path = resource_dir.join(format!("{}.backup", target_binary_name));
+    if target_path.exists() {
+        let _ = std::fs::rename(&target_path, &backup_path);
+    }
+    
+    // Copy new binary
+    std::fs::copy(&extracted_binary, &target_path)
+        .map_err(|e| format!("Failed to install new binary: {}", e))?;
+    
+    // Make executable on Unix
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&target_path)
+            .map_err(|e| e.to_string())?
+            .permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&target_path, perms)
+            .map_err(|e| format!("Failed to set permissions: {}", e))?;
+    }
+    
+    // Clean up
+    let _ = std::fs::remove_dir_all(&temp_dir);
+    let _ = std::fs::remove_file(&backup_path);
+    
+    println!("[CoreUpdate] Successfully updated CLIProxyAPI to v{}", version);
+    
+    // Return the new version
+    Ok(serde_json::json!({
+        "success": true,
+        "version": version,
+        "message": format!("CLIProxyAPI updated to v{}", version)
+    }))
+}
+
+fn get_asset_name_for_platform(version: &str) -> Result<(String, String), String> {
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    return Ok((format!("CLIProxyAPI_{}_darwin_arm64.tar.gz", version), "tar".to_string()));
+    
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    return Ok((format!("CLIProxyAPI_{}_darwin_amd64.tar.gz", version), "tar".to_string()));
+    
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    return Ok((format!("CLIProxyAPI_{}_linux_amd64.tar.gz", version), "tar".to_string()));
+    
+    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+    return Ok((format!("CLIProxyAPI_{}_linux_arm64.tar.gz", version), "tar".to_string()));
+    
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    return Ok((format!("CLIProxyAPI_{}_windows_amd64.zip", version), "zip".to_string()));
+    
+    #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
+    return Ok((format!("CLIProxyAPI_{}_windows_arm64.zip", version), "zip".to_string()));
+    
+    #[allow(unreachable_code)]
+    Err("Unsupported platform".to_string())
+}
+
+fn extract_archive(archive_path: &std::path::Path, dest_dir: &std::path::Path, archive_type: &str) -> Result<(), String> {
+    match archive_type {
+        "tar" => {
+            // Use tar command for extraction
+            let mut cmd = std::process::Command::new("tar");
+            cmd.args(["-xzf", archive_path.to_str().unwrap(), "-C", dest_dir.to_str().unwrap()]);
+            
+            let output = cmd.output().map_err(|e| format!("Failed to run tar: {}", e))?;
+            if !output.status.success() {
+                return Err(format!("tar extraction failed: {}", String::from_utf8_lossy(&output.stderr)));
+            }
+            Ok(())
+        }
+        "zip" => {
+            // Use unzip or PowerShell for Windows
+            #[cfg(target_os = "windows")]
+            {
+                let mut cmd = std::process::Command::new("powershell");
+                cmd.args([
+                    "-NoProfile",
+                    "-Command",
+                    &format!(
+                        "Expand-Archive -Path '{}' -DestinationPath '{}' -Force",
+                        archive_path.to_str().unwrap(),
+                        dest_dir.to_str().unwrap()
+                    ),
+                ]);
+                cmd.creation_flags(CREATE_NO_WINDOW);
+                
+                let output = cmd.output().map_err(|e| format!("Failed to run PowerShell: {}", e))?;
+                if !output.status.success() {
+                    return Err(format!("zip extraction failed: {}", String::from_utf8_lossy(&output.stderr)));
+                }
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                let mut cmd = std::process::Command::new("unzip");
+                cmd.args(["-o", archive_path.to_str().unwrap(), "-d", dest_dir.to_str().unwrap()]);
+                
+                let output = cmd.output().map_err(|e| format!("Failed to run unzip: {}", e))?;
+                if !output.status.success() {
+                    return Err(format!("zip extraction failed: {}", String::from_utf8_lossy(&output.stderr)));
+                }
+            }
+            Ok(())
+        }
+        _ => Err(format!("Unknown archive type: {}", archive_type)),
+    }
+}
+
 // Check if auto-updater is supported on this platform/install type
 // Linux .deb installations do NOT support auto-update (only AppImage does)
 #[tauri::command]
@@ -7070,6 +7464,10 @@ pub fn run() {
             set_claude_code_model,
             // Updater support check
             is_updater_supported,
+            // Core Update (CLIProxyAPI)
+            get_core_version,
+            check_core_update,
+            update_core,
             // SSH
             commands::ssh::get_ssh_configs,
             commands::ssh::save_ssh_config,

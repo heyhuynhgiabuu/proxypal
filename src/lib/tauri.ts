@@ -1251,6 +1251,39 @@ export async function isUpdaterSupported(): Promise<UpdaterSupport> {
 }
 
 // ============================================================================
+// Core Update (CLIProxyAPI)
+// ============================================================================
+
+export interface CoreUpdateInfo {
+	currentVersion: string;
+	latestVersion: string;
+	updateAvailable: boolean;
+	releaseNotes: string;
+	publishedAt: string;
+}
+
+export interface CoreUpdateResult {
+	success: boolean;
+	version: string;
+	message: string;
+}
+
+// Get the current installed CLIProxyAPI version
+export async function getCoreVersion(): Promise<string> {
+	return invoke("get_core_version");
+}
+
+// Check for available CLIProxyAPI update
+export async function checkCoreUpdate(): Promise<CoreUpdateInfo> {
+	return invoke("check_core_update");
+}
+
+// Download and install the latest CLIProxyAPI binary
+export async function updateCore(): Promise<CoreUpdateResult> {
+	return invoke("update_core");
+}
+
+// ============================================================================
 // Antigravity Quota
 // ============================================================================
 
