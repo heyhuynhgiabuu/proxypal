@@ -6820,6 +6820,11 @@ fn get_tool_setup_info(tool_id: String, state: State<AppState>) -> Result<serde_
 /// GitHub repository for CLIProxyAPI releases
 const CLIPROXYAPI_REPO: &str = "router-for-me/CLIProxyAPI";
 
+/// Regex pattern for extracting version numbers (compiled once)
+lazy_static::lazy_static! {
+    static ref VERSION_REGEX: Regex = Regex::new(r"v?(\d+\.\d+\.\d+)").unwrap();
+}
+
 /// Get the current installed CLIProxyAPI version by running the binary with --version
 #[tauri::command]
 async fn get_core_version(app: tauri::AppHandle) -> Result<String, String> {
@@ -6886,8 +6891,7 @@ async fn run_version_command(binary_path: &std::path::Path) -> Result<String, St
 
 fn extract_version_from_line(line: &str) -> Option<String> {
     // Match patterns like "v1.2.3", "1.2.3", "version 1.2.3", "CLIProxyAPI version 1.2.3"
-    let re = regex::Regex::new(r"v?(\d+\.\d+\.\d+)").ok()?;
-    re.captures(line)
+    VERSION_REGEX.captures(line)
         .and_then(|caps| caps.get(1))
         .map(|m| m.as_str().to_string())
 }
@@ -6945,10 +6949,15 @@ async fn check_core_update(app: tauri::AppHandle) -> Result<serde_json::Value, S
     }))
 }
 
-/// Compare two semver versions, returns true if `new_ver` is newer than `current`
+/// Compare two semver versions (major.minor.patch), returns true if `new_ver` is newer than `current`.
+/// Note: This only handles standard x.y.z versions. Pre-release tags (e.g., -alpha, -rc1) are ignored.
+/// CLIProxyAPI uses standard semver without pre-release tags.
 fn is_newer_version(new_ver: &str, current: &str) -> bool {
     let parse_version = |v: &str| -> Vec<u32> {
-        v.split('.')
+        // Strip any pre-release suffix (e.g., "1.2.3-alpha" -> "1.2.3")
+        let version_core = v.split('-').next().unwrap_or(v);
+        version_core
+            .split('.')
             .filter_map(|s| s.parse().ok())
             .collect()
     };
@@ -6956,6 +6965,7 @@ fn is_newer_version(new_ver: &str, current: &str) -> bool {
     let new_parts = parse_version(new_ver);
     let current_parts = parse_version(current);
     
+    // Compare up to 3 components (major, minor, patch)
     for i in 0..3 {
         let new_num = new_parts.get(i).copied().unwrap_or(0);
         let current_num = current_parts.get(i).copied().unwrap_or(0);

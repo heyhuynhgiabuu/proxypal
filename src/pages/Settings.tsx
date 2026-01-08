@@ -663,9 +663,16 @@ export function SettingsPage() {
 			if (result.success) {
 				toastStore.success(result.message);
 				setCoreVersion(result.version);
-				setCoreUpdateInfo(null);
-				// Refresh core update info to clear the update available indicator
-				await handleCheckCoreUpdate();
+				// Update the coreUpdateInfo to reflect no update available without additional network request
+				setCoreUpdateInfo((prev) =>
+					prev
+						? {
+								...prev,
+								currentVersion: result.version,
+								updateAvailable: false,
+							}
+						: null,
+				);
 			} else {
 				toastStore.error(`Update failed: ${result.message}`);
 			}
