@@ -6934,8 +6934,9 @@ async fn check_core_update(app: tauri::AppHandle) -> Result<serde_json::Value, S
     let published_at = release["published_at"].as_str().unwrap_or("").to_string();
     
     // Compare versions
+    // When the current version cannot be determined, allow updates if we have a valid latest version
     let update_available = if current_version == "unknown" {
-        false
+        !latest_version.is_empty()
     } else {
         is_newer_version(&latest_version, &current_version)
     };
@@ -7007,7 +7008,12 @@ async fn update_core(
             status.running = false;
         }
         
-        // Wait for process to fully terminate
+        // Wait for process to fully terminate (Windows may need more time to release file locks)
+        // Use longer wait time for better cross-platform reliability
+        tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
+        
+        // Additional wait to ensure file locks are released
+        #[cfg(target_os = "windows")]
         tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
     }
     
@@ -7101,29 +7107,52 @@ async fn update_core(
     
     // Backup old binary
     let backup_path = resource_dir.join(format!("{}.backup", target_binary_name));
-    if target_path.exists() {
-        let _ = std::fs::rename(&target_path, &backup_path);
-    }
+    let had_backup = if target_path.exists() {
+        std::fs::rename(&target_path, &backup_path)
+            .map_err(|e| format!("Failed to backup old binary: {}", e))?;
+        true
+    } else {
+        false
+    };
     
-    // Copy new binary
-    std::fs::copy(&extracted_binary, &target_path)
-        .map_err(|e| format!("Failed to install new binary: {}", e))?;
+    // Copy new binary - if this fails, restore backup
+    if let Err(e) = std::fs::copy(&extracted_binary, &target_path) {
+        // Restore backup if copy failed
+        if had_backup {
+            let _ = std::fs::rename(&backup_path, &target_path);
+        }
+        return Err(format!("Failed to install new binary: {}", e));
+    }
     
     // Make executable on Unix
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&target_path)
-            .map_err(|e| e.to_string())?
-            .permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(&target_path, perms)
-            .map_err(|e| format!("Failed to set permissions: {}", e))?;
+        if let Err(e) = (|| -> Result<(), String> {
+            let mut perms = std::fs::metadata(&target_path)
+                .map_err(|e| e.to_string())?
+                .permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&target_path, perms)
+                .map_err(|e| format!("Failed to set permissions: {}", e))?;
+            Ok(())
+        })() {
+            // Restore backup if chmod failed
+            if had_backup {
+                let _ = std::fs::remove_file(&target_path);
+                let _ = std::fs::rename(&backup_path, &target_path);
+            }
+            return Err(e);
+        }
     }
     
-    // Clean up
+    // Clean up temp directory
     let _ = std::fs::remove_dir_all(&temp_dir);
-    let _ = std::fs::remove_file(&backup_path);
+    
+    // Only remove backup after confirming the new binary was installed successfully
+    if had_backup {
+        let _ = std::fs::remove_file(&backup_path);
+    }
     
     println!("[CoreUpdate] Successfully updated CLIProxyAPI to v{}", version);
     
