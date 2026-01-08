@@ -8,6 +8,7 @@ import {
 	Show,
 } from "solid-js";
 import { ModelsWidget } from "../components/ModelsWidget";
+import { ConfirmModal } from "../components/ConfirmModal";
 import { Button, Switch } from "../components/ui";
 
 type SettingsTab =
@@ -322,6 +323,10 @@ export function SettingsPage() {
 	const [checkingCoreUpdate, setCheckingCoreUpdate] = createSignal(false);
 	const [installingCoreUpdate, setInstallingCoreUpdate] = createSignal(false);
 	const [coreVersion, setCoreVersion] = createSignal<string | null>(null);
+
+	// Core update confirmation modal state
+	const [showCoreUpdateConfirm, setShowCoreUpdateConfirm] = createSignal(false);
+	const [pendingCoreUpdate, setPendingCoreUpdate] = createSignal<{ wasRunning: boolean } | null>(null);
 
 	// Check updater support on mount
 	createEffect(async () => {
@@ -652,14 +657,19 @@ export function SettingsPage() {
 		// Track if proxy was running to restart after update
 		const wasRunning = appStore.proxyStatus().running;
 
-		// Warn user if proxy is running
+		// If proxy is running, show confirmation modal
 		if (wasRunning) {
-			const confirmed = confirm(
-				"The proxy is currently running and will be stopped to install the update. It will restart automatically after the update. Continue?",
-			);
-			if (!confirmed) return;
+			setPendingCoreUpdate({ wasRunning });
+			setShowCoreUpdateConfirm(true);
+			return;
 		}
 
+		// If proxy is not running, proceed directly
+		await performCoreUpdate(false);
+	};
+
+	// Perform the actual core update
+	const performCoreUpdate = async (wasRunning: boolean) => {
 		setInstallingCoreUpdate(true);
 		try {
 			const result = await updateCore();
@@ -700,6 +710,22 @@ export function SettingsPage() {
 		} finally {
 			setInstallingCoreUpdate(false);
 		}
+	};
+
+	// Handle core update confirm
+	const handleCoreUpdateConfirm = async () => {
+		const pending = pendingCoreUpdate();
+		setShowCoreUpdateConfirm(false);
+		setPendingCoreUpdate(null);
+		if (pending) {
+			await performCoreUpdate(pending.wasRunning);
+		}
+	};
+
+	// Handle core update cancel
+	const handleCoreUpdateCancel = () => {
+		setShowCoreUpdateConfirm(false);
+		setPendingCoreUpdate(null);
 	};
 
 	// Run copilot detection
@@ -1538,214 +1564,151 @@ export function SettingsPage() {
 	};
 
 	return (
-		<div class="min-h-screen flex flex-col">
-			{/* Header with Tabs */}
-			<header class="sticky top-0 z-10 px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
-				<div class="flex items-center justify-between gap-2 sm:gap-3">
-					<div class="flex items-center gap-2 sm:gap-3">
-						<h1 class="font-bold text-lg text-gray-900 dark:text-gray-100">
-							Settings
-						</h1>
-						{saving() && (
-							<span class="text-xs text-gray-400 ml-2 flex items-center gap-1">
-								<svg
-									class="w-3 h-3 animate-spin"
-									fill="none"
-									viewBox="0 0 24 24"
-								>
-									<circle
-										class="opacity-25"
-										cx="12"
-										cy="12"
-										r="10"
-										stroke="currentColor"
-										stroke-width="4"
-									/>
-									<path
-										class="opacity-75"
-										fill="currentColor"
-										d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-									/>
-								</svg>
-								Saving
-							</span>
-						)}
-					</div>
-					{/* Tab Navigation */}
-					<div class="flex gap-1">
-						<For
-							each={[
-								{ id: "general" as SettingsTab, label: "General" },
-								{ id: "providers" as SettingsTab, label: "Providers" },
-								{ id: "models" as SettingsTab, label: "Models" },
-								{ id: "ssh" as SettingsTab, label: "SSH API" },
-								{ id: "cloudflare" as SettingsTab, label: "Cloudflare" },
-								{ id: "advanced" as SettingsTab, label: "Advanced" },
-							]}
-						>
-							{(tab) => (
-								<button
-									type="button"
-									onClick={() => setActiveTab(tab.id)}
-									class="px-3 py-1.5 text-sm font-medium rounded-lg transition-colors"
-									classList={{
-										"bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400":
-											activeTab() === tab.id,
-										"text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800":
-											activeTab() !== tab.id,
-									}}
-								>
-									{tab.label}
-								</button>
+		<>
+			<div class="min-h-screen flex flex-col">
+				{/* Header with Tabs */}
+				<header class="sticky top-0 z-10 px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+					<div class="flex items-center justify-between gap-2 sm:gap-3">
+						<div class="flex items-center gap-2 sm:gap-3">
+							<h1 class="font-bold text-lg text-gray-900 dark:text-gray-100">
+								Settings
+							</h1>
+							{saving() && (
+								<span class="text-xs text-gray-400 ml-2 flex items-center gap-1">
+									<svg
+										class="w-3 h-3 animate-spin"
+										fill="none"
+										viewBox="0 0 24 24"
+									>
+										<circle
+											class="opacity-25"
+											cx="12"
+											cy="12"
+											r="10"
+											stroke="currentColor"
+											stroke-width="4"
+										/>
+										<path
+											class="opacity-75"
+											fill="currentColor"
+											d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+										/>
+									</svg>
+									Saving
+								</span>
 							)}
-						</For>
-					</div>
-				</div>
-			</header>
-
-			{/* Main content */}
-			<main class="flex-1 p-4 sm:p-6 overflow-y-auto">
-				<div class="max-w-xl mx-auto space-y-4 sm:space-y-6 animate-stagger">
-					{/* General settings */}
-					<div
-						class="space-y-4"
-						classList={{ hidden: activeTab() !== "general" }}
-					>
-						<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
-							General
-						</h2>
-
-						<div class="space-y-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
-							<Switch
-								label="Launch at login"
-								description="Start ProxyPal automatically when you log in"
-								checked={config().launchAtLogin}
-								onChange={(checked) =>
-									handleConfigChange("launchAtLogin", checked)
-								}
-							/>
-
-							<div class="border-t border-gray-200 dark:border-gray-700" />
-
-							<Switch
-								label="Auto-start proxy"
-								description="Start the proxy server when ProxyPal launches"
-								checked={config().autoStart}
-								onChange={(checked) => handleConfigChange("autoStart", checked)}
-							/>
-
-							<div class="border-t border-gray-200 dark:border-gray-700" />
-
-							<Switch
-								label="Close to tray"
-								description="Minimize to system tray instead of quitting when closing the window"
-								checked={closeToTray()}
-								onChange={handleCloseToTrayChange}
-								disabled={savingCloseToTray()}
-							/>
+						</div>
+						{/* Tab Navigation */}
+						<div class="flex gap-1">
+							<For
+								each={[
+									{ id: "general" as SettingsTab, label: "General" },
+									{ id: "providers" as SettingsTab, label: "Providers" },
+									{ id: "models" as SettingsTab, label: "Models" },
+									{ id: "ssh" as SettingsTab, label: "SSH API" },
+									{ id: "cloudflare" as SettingsTab, label: "Cloudflare" },
+									{ id: "advanced" as SettingsTab, label: "Advanced" },
+								]}
+							>
+								{(tab) => (
+									<button
+										type="button"
+										onClick={() => setActiveTab(tab.id)}
+										class="px-3 py-1.5 text-sm font-medium rounded-lg transition-colors"
+										classList={{
+											"bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400":
+												activeTab() === tab.id,
+											"text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800":
+												activeTab() !== tab.id,
+										}}
+									>
+										{tab.label}
+									</button>
+								)}
+							</For>
 						</div>
 					</div>
+				</header>
 
-					{/* Core Update (CLIProxyAPI) */}
-					<div
-						class="space-y-4"
-						classList={{ hidden: activeTab() !== "general" }}
-					>
-						<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
-							Proxy Core Updates
-						</h2>
+				{/* Main content */}
+				<main class="flex-1 p-4 sm:p-6 overflow-y-auto">
+					<div class="max-w-xl mx-auto space-y-4 sm:space-y-6 animate-stagger">
+						{/* General settings */}
+						<div
+							class="space-y-4"
+							classList={{ hidden: activeTab() !== "general" }}
+						>
+							<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+								General
+							</h2>
 
-						<div class="space-y-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
-							<div class="flex items-center justify-between">
-								<div class="flex-1">
-									<p class="text-sm font-medium text-gray-700 dark:text-gray-300">
-										CLIProxyAPI Core
-									</p>
-									<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-										<Show
-											when={coreVersion()}
-											fallback="Checking version..."
-										>
-											Current version: v{coreVersion()}
-										</Show>
-									</p>
-								</div>
-								<Button
-									variant="secondary"
-									size="sm"
-									onClick={handleCheckCoreUpdate}
-									disabled={checkingCoreUpdate() || installingCoreUpdate()}
-								>
-									<Show
-										when={checkingCoreUpdate()}
-										fallback={
-											<>
-												<svg
-													class="w-4 h-4 mr-1.5"
-													fill="none"
-													stroke="currentColor"
-													viewBox="0 0 24 24"
-												>
-													<path
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														stroke-width="2"
-														d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-													/>
-												</svg>
-												Check for Update
-											</>
-										}
-									>
-										<svg
-											class="w-4 h-4 animate-spin mr-1.5"
-											fill="none"
-											viewBox="0 0 24 24"
-										>
-											<circle
-												class="opacity-25"
-												cx="12"
-												cy="12"
-												r="10"
-												stroke="currentColor"
-												stroke-width="4"
-											/>
-											<path
-												class="opacity-75"
-												fill="currentColor"
-												d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-											/>
-										</svg>
-										Checking...
-									</Show>
-								</Button>
+							<div class="space-y-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+								<Switch
+									label="Launch at login"
+									description="Start ProxyPal automatically when you log in"
+									checked={config().launchAtLogin}
+									onChange={(checked) =>
+										handleConfigChange("launchAtLogin", checked)
+									}
+								/>
+
+								<div class="border-t border-gray-200 dark:border-gray-700" />
+
+								<Switch
+									label="Auto-start proxy"
+									description="Start the proxy server when ProxyPal launches"
+									checked={config().autoStart}
+									onChange={(checked) => handleConfigChange("autoStart", checked)}
+								/>
+
+								<div class="border-t border-gray-200 dark:border-gray-700" />
+
+								<Switch
+									label="Close to tray"
+									description="Minimize to system tray instead of quitting when closing the window"
+									checked={closeToTray()}
+									onChange={handleCloseToTrayChange}
+									disabled={savingCloseToTray()}
+								/>
 							</div>
+						</div>
 
-							{/* Update available */}
-							<Show when={coreUpdateInfo()?.updateAvailable}>
-								<div class="border-t border-gray-200 dark:border-gray-700 pt-4">
-									<div class="flex items-start gap-3 p-3 bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 rounded-lg">
-										<svg
-											class="w-5 h-5 text-brand-500 mt-0.5 shrink-0"
-											fill="none"
-											stroke="currentColor"
-											viewBox="0 0 24 24"
-										>
-											<path
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												stroke-width="2"
-												d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"
-											/>
-										</svg>
-										<div class="flex-1 min-w-0">
-											<p class="text-sm font-medium text-brand-700 dark:text-brand-300">
-												Core Update Available: v{coreUpdateInfo()?.latestVersion}
-											</p>
-											<Show when={appStore.proxyStatus().running}>
-												<p class="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
+						{/* Core Update (CLIProxyAPI) */}
+						<div
+							class="space-y-4"
+							classList={{ hidden: activeTab() !== "general" }}
+						>
+							<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+								Proxy Core Updates
+							</h2>
+
+							<div class="space-y-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+								<div class="flex items-center justify-between">
+									<div class="flex-1">
+										<p class="text-sm font-medium text-gray-700 dark:text-gray-300">
+											CLIProxyAPI Core
+										</p>
+										<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+											<Show
+												when={coreVersion()}
+												fallback="Checking version..."
+											>
+												Current version: v{coreVersion()}
+											</Show>
+										</p>
+									</div>
+									<Button
+										variant="secondary"
+										size="sm"
+										onClick={handleCheckCoreUpdate}
+										disabled={checkingCoreUpdate() || installingCoreUpdate()}
+									>
+										<Show
+											when={checkingCoreUpdate()}
+											fallback={
+												<>
 													<svg
-														class="w-3.5 h-3.5"
+														class="w-4 h-4 mr-1.5"
 														fill="none"
 														stroke="currentColor"
 														viewBox="0 0 24 24"
@@ -1754,2152 +1717,15 @@ export function SettingsPage() {
 															stroke-linecap="round"
 															stroke-linejoin="round"
 															stroke-width="2"
-															d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+															d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
 														/>
 													</svg>
-													The proxy will be stopped to install the update
-												</p>
-											</Show>
-											<Show when={coreUpdateInfo()?.releaseNotes}>
-												<details class="mt-2">
-													<summary class="cursor-pointer text-xs text-brand-600 dark:text-brand-400">
-														Release notes
-													</summary>
-													<p class="text-xs text-brand-600 dark:text-brand-400 mt-1 whitespace-pre-wrap">
-														{coreUpdateInfo()?.releaseNotes?.slice(0, 500)}
-														{(coreUpdateInfo()?.releaseNotes?.length || 0) > 500 && "..."}
-													</p>
-												</details>
-											</Show>
-										</div>
-									</div>
-
-									{/* Install button */}
-									<div class="mt-3">
-										<Button
-											variant="primary"
-											size="sm"
-											onClick={handleInstallCoreUpdate}
-											disabled={installingCoreUpdate()}
-											class="w-full"
-										>
-											<Show
-												when={installingCoreUpdate()}
-												fallback={
-													<>
-														<svg
-															class="w-4 h-4 mr-1.5"
-															fill="none"
-															stroke="currentColor"
-															viewBox="0 0 24 24"
-														>
-															<path
-																stroke-linecap="round"
-																stroke-linejoin="round"
-																stroke-width="2"
-																d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-															/>
-														</svg>
-														Download & Install
-													</>
-												}
-											>
-												<svg
-													class="w-4 h-4 animate-spin mr-1.5"
-													fill="none"
-													viewBox="0 0 24 24"
-												>
-													<circle
-														class="opacity-25"
-														cx="12"
-														cy="12"
-														r="10"
-														stroke="currentColor"
-														stroke-width="4"
-													/>
-													<path
-														class="opacity-75"
-														fill="currentColor"
-														d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-													/>
-												</svg>
-												Installing...
-											</Show>
-										</Button>
-									</div>
-								</div>
-							</Show>
-
-							{/* Already up to date */}
-							<Show when={coreUpdateInfo() && !coreUpdateInfo()?.updateAvailable}>
-								<div class="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
-									<svg
-										class="w-5 h-5 text-green-500"
-										fill="none"
-										stroke="currentColor"
-										viewBox="0 0 24 24"
-									>
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											stroke-width="2"
-											d="M5 13l4 4L19 7"
-										/>
-									</svg>
-									<p class="text-sm text-green-700 dark:text-green-300">
-										Core is up to date (v{coreUpdateInfo()?.currentVersion})
-									</p>
-								</div>
-							</Show>
-						</div>
-					</div>
-
-					{/* Proxy settings */}
-					<div
-						class="space-y-4"
-						classList={{ hidden: activeTab() !== "general" }}
-					>
-						<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
-							Proxy Configuration
-						</h2>
-
-						<div class="space-y-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
-							<label class="block">
-								<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-									Port
-								</span>
-								<input
-									type="number"
-									value={config().port}
-									onInput={(e) =>
-										handleConfigChange(
-											"port",
-											parseInt(e.currentTarget.value) || 8317,
-										)
-									}
-									class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth"
-									min="1024"
-									max="65535"
-								/>
-								<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-									The port where the proxy server will listen (default: 8317)
-								</p>
-							</label>
-
-							<div class="border-t border-gray-200 dark:border-gray-700" />
-
-							<label class="block">
-								<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-									Upstream Proxy URL
-								</span>
-								<input
-									type="text"
-									value={config().proxyUrl}
-									onInput={(e) =>
-										handleConfigChange("proxyUrl", e.currentTarget.value)
-									}
-									placeholder="socks5://127.0.0.1:1080"
-									class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth"
-								/>
-								<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-									Optional SOCKS5/HTTP proxy for outbound requests (e.g.
-									socks5://host:port)
-								</p>
-							</label>
-
-							<div class="border-t border-gray-200 dark:border-gray-700" />
-
-							<label class="block">
-								<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-									Proxy API Key
-								</span>
-								<div class="relative mt-1">
-									<input
-										type={showProxyApiKey() ? "text" : "password"}
-										value={config().proxyApiKey || "proxypal-local"}
-										onInput={(e) =>
-											handleConfigChange(
-												"proxyApiKey",
-												e.currentTarget.value || "proxypal-local",
-											)
-										}
-										placeholder="proxypal-local"
-										class="block w-full px-3 py-2 pr-10 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-mono focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth"
-									/>
-									<button
-										type="button"
-										onClick={() => setShowProxyApiKey(!showProxyApiKey())}
-										class="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-									>
-										{showProxyApiKey() ? (
-											<svg
-												class="w-5 h-5"
-												fill="none"
-												viewBox="0 0 24 24"
-												stroke="currentColor"
-											>
-												<path
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													stroke-width="2"
-													d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
-												/>
-											</svg>
-										) : (
-											<svg
-												class="w-5 h-5"
-												fill="none"
-												viewBox="0 0 24 24"
-												stroke="currentColor"
-											>
-												<path
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													stroke-width="2"
-													d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-												/>
-												<path
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													stroke-width="2"
-													d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-												/>
-											</svg>
-										)}
-									</button>
-								</div>
-								<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-									API key for client authentication. Change this if exposing
-									proxy publicly.
-								</p>
-							</label>
-
-							<div class="border-t border-gray-200 dark:border-gray-700" />
-
-							<label class="block">
-								<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-									Management API Key
-								</span>
-								<div class="relative mt-1">
-									<input
-										type={showManagementKey() ? "text" : "password"}
-										value={config().managementKey || "proxypal-mgmt-key"}
-										onInput={(e) =>
-											handleConfigChange(
-												"managementKey",
-												e.currentTarget.value || "proxypal-mgmt-key",
-											)
-										}
-										placeholder="proxypal-mgmt-key"
-										class="block w-full px-3 py-2 pr-10 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-mono focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth"
-									/>
-									<button
-										type="button"
-										onClick={() => setShowManagementKey(!showManagementKey())}
-										class="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-									>
-										{showManagementKey() ? (
-											<svg
-												class="w-5 h-5"
-												fill="none"
-												viewBox="0 0 24 24"
-												stroke="currentColor"
-											>
-												<path
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													stroke-width="2"
-													d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
-												/>
-											</svg>
-										) : (
-											<svg
-												class="w-5 h-5"
-												fill="none"
-												viewBox="0 0 24 24"
-												stroke="currentColor"
-											>
-												<path
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													stroke-width="2"
-													d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-												/>
-												<path
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													stroke-width="2"
-													d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-												/>
-											</svg>
-										)}
-									</button>
-								</div>
-								<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-									Secret key for internal management API. Change this if
-									exposing proxy publicly.
-								</p>
-								<p class="mt-1 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-2 py-1 rounded">
-									⚠️ Changing this key requires a proxy restart to take effect.
-								</p>
-							</label>
-
-							<div class="border-t border-gray-200 dark:border-gray-700" />
-
-							<label class="block">
-								<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-									Request Retry Count
-								</span>
-								<input
-									type="number"
-									value={config().requestRetry}
-									onInput={(e) =>
-										handleConfigChange(
-											"requestRetry",
-											Math.max(
-												0,
-												Math.min(10, parseInt(e.currentTarget.value) || 0),
-											),
-										)
-									}
-									class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth"
-									min="0"
-									max="10"
-								/>
-								<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-									Number of retries on 403, 408, 500, 502, 503, 504 errors
-									(0-10)
-								</p>
-							</label>
-
-							<div class="border-t border-gray-200 dark:border-gray-700" />
-
-							<label class="block">
-								<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-									Routing Strategy
-								</span>
-								<select
-									value={config().routingStrategy}
-									onChange={(e) =>
-										handleConfigChange("routingStrategy", e.currentTarget.value)
-									}
-									class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth [&>option]:bg-white [&>option]:dark:bg-gray-900 [&>option]:text-gray-900 [&>option]:dark:text-gray-100"
-								>
-									<option value="round-robin">
-										Round Robin (even distribution)
-									</option>
-									<option value="fill-first">
-										Fill First (use first account until limit)
-									</option>
-									<option value="sequential">Sequential (ordered)</option>
-								</select>
-								<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-									How auth accounts are selected for requests
-								</p>
-							</label>
-
-							<Show when={appStore.proxyStatus().running}>
-								<div class="border-t border-gray-200 dark:border-gray-700" />
-
-								<label class="block">
-									<span class="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
-										Max Retry Interval (seconds)
-										<Show when={savingMaxRetryInterval()}>
-											<svg
-												class="w-4 h-4 animate-spin text-brand-500"
-												fill="none"
-												viewBox="0 0 24 24"
-											>
-												<circle
-													class="opacity-25"
-													cx="12"
-													cy="12"
-													r="10"
-													stroke="currentColor"
-													stroke-width="4"
-												/>
-												<path
-													class="opacity-75"
-													fill="currentColor"
-													d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-												/>
-											</svg>
-										</Show>
-									</span>
-									<input
-										type="number"
-										value={maxRetryInterval()}
-										onInput={(e) => {
-											const val = Math.max(
-												0,
-												parseInt(e.currentTarget.value) || 0,
-											);
-											handleMaxRetryIntervalChange(val);
-										}}
-										disabled={savingMaxRetryInterval()}
-										class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth disabled:opacity-50"
-										min="0"
-									/>
-									<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-										Maximum wait time between retries in seconds (0 = no limit).
-										Updates live without restart.
-									</p>
-								</label>
-
-								<label class="block">
-									<span class="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
-										Log Buffer Size
-										<Show when={savingLogSize()}>
-											<svg
-												class="w-4 h-4 animate-spin text-brand-500"
-												fill="none"
-												viewBox="0 0 24 24"
-											>
-												<circle
-													class="opacity-25"
-													cx="12"
-													cy="12"
-													r="10"
-													stroke="currentColor"
-													stroke-width="4"
-												/>
-												<path
-													class="opacity-75"
-													fill="currentColor"
-													d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-												/>
-											</svg>
-										</Show>
-									</span>
-									<input
-										type="number"
-										value={logSize()}
-										onInput={(e) => {
-											const val = Math.max(
-												100,
-												parseInt(e.currentTarget.value) || 500,
-											);
-											handleLogSizeChange(val);
-										}}
-										disabled={savingLogSize()}
-										class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth disabled:opacity-50"
-										min="100"
-									/>
-									<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-										Number of log entries to retain in memory. Higher values use
-										more memory but preserve older logs.
-									</p>
-								</label>
-							</Show>
-						</div>
-					</div>
-
-					{/* Thinking Budget Settings */}
-					<div
-						class="space-y-4"
-						classList={{ hidden: activeTab() !== "general" }}
-					>
-						<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
-							Thinking Budget (Antigravity Claude Models)
-						</h2>
-
-						<div class="space-y-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
-							<p class="text-xs text-gray-500 dark:text-gray-400">
-								Configure the thinking/reasoning token budget for Antigravity
-								Claude models (claude-sonnet-4-5-thinking,
-								claude-opus-4-5-thinking). This applies to both OpenCode and
-								AmpCode CLI agents.
-							</p>
-
-							<div class="space-y-3">
-								<label class="block">
-									<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-										Budget Level
-									</span>
-									<select
-										value={thinkingBudgetMode()}
-										onChange={(e) =>
-											setThinkingBudgetMode(
-												e.currentTarget.value as ThinkingBudgetSettings["mode"],
-											)
-										}
-										class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth [&>option]:bg-white [&>option]:dark:bg-gray-900 [&>option]:text-gray-900 [&>option]:dark:text-gray-100"
-									>
-										<option value="low">Low (2,048 tokens)</option>
-										<option value="medium">Medium (8,192 tokens)</option>
-										<option value="high">High (32,768 tokens)</option>
-										<option value="custom">Custom</option>
-									</select>
-								</label>
-
-								<Show when={thinkingBudgetMode() === "custom"}>
-									<label class="block">
-										<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-											Custom Token Budget
-										</span>
-										<input
-											type="number"
-											value={thinkingBudgetCustom()}
-											onInput={(e) =>
-												setThinkingBudgetCustom(
-													Math.max(
-														1024,
-														Math.min(
-															200000,
-															parseInt(e.currentTarget.value) || 16000,
-														),
-													),
-												)
+													Check for Update
+												</>
 											}
-											class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth"
-											min="1024"
-											max="200000"
-										/>
-										<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-											Range: 1,024 - 200,000 tokens
-										</p>
-									</label>
-								</Show>
-
-								<div class="flex items-center justify-between pt-2">
-									<span class="text-sm text-gray-600 dark:text-gray-400">
-										Current:{" "}
-										<span class="font-medium text-brand-600 dark:text-brand-400">
-											{getThinkingBudgetTokens({
-												mode: thinkingBudgetMode(),
-												customBudget: thinkingBudgetCustom(),
-											}).toLocaleString()}{" "}
-											tokens
-										</span>
-									</span>
-									<Button
-										variant="primary"
-										size="sm"
-										onClick={saveThinkingBudget}
-										disabled={savingThinkingBudget()}
-									>
-										{savingThinkingBudget() ? "Saving..." : "Apply"}
-									</Button>
-								</div>
-
-								{/* Gemini Thinking Injection Toggle */}
-								<div class="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-700">
-									<div class="flex-1">
-										<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-											Gemini Thinking Config Injection
-										</span>
-										<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-											When enabled, ProxyPal injects thinking config for Gemini
-											3 models. Disable if you want to control thinking_config
-											in your requests.
-										</p>
-									</div>
-									<Switch
-										checked={geminiThinkingInjection()}
-										onChange={(checked) => saveGeminiThinkingInjection(checked)}
-										disabled={savingGeminiThinking()}
-									/>
-								</div>
-							</div>
-						</div>
-					</div>
-
-					{/* Reasoning Effort (GPT/Codex Models) */}
-					<div
-						class="space-y-4"
-						classList={{ hidden: activeTab() !== "general" }}
-					>
-						<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
-							Reasoning Effort (GPT/Codex Models)
-						</h2>
-
-						<div class="space-y-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
-							<p class="text-xs text-gray-500 dark:text-gray-400">
-								Configure default reasoning effort for GPT-5.x models. This
-								setting is applied when configuring CLI agents (OpenCode,
-								Factory Droid, etc.) and can be overridden per-request using
-								model suffix like{" "}
-								<code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">
-									gpt-5(high)
-								</code>
-								.
-							</p>
-
-							<div class="space-y-3">
-								<label class="block">
-									<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-										Default Effort Level
-									</span>
-									<select
-										value={reasoningEffortLevel()}
-										onChange={(e) =>
-											setReasoningEffortLevel(
-												e.currentTarget.value as ReasoningEffortLevel,
-											)
-										}
-										class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth [&>option]:bg-white [&>option]:dark:bg-gray-900 [&>option]:text-gray-900 [&>option]:dark:text-gray-100"
-									>
-										<option value="none">None (disabled)</option>
-										<option value="low">Low (~1,024 tokens)</option>
-										<option value="medium">Medium (~8,192 tokens)</option>
-										<option value="high">High (~24,576 tokens)</option>
-										<option value="xhigh">Extra High (~32,768 tokens)</option>
-									</select>
-								</label>
-
-								<div class="flex items-center justify-between pt-2">
-									<span class="text-sm text-gray-600 dark:text-gray-400">
-										Current:{" "}
-										<span class="font-medium text-brand-600 dark:text-brand-400">
-											{reasoningEffortLevel()}
-										</span>
-									</span>
-									<Button
-										variant="primary"
-										size="sm"
-										onClick={saveReasoningEffort}
-										disabled={savingReasoningEffort()}
-									>
-										{savingReasoningEffort() ? "Saving..." : "Apply"}
-									</Button>
-								</div>
-
-								<p class="text-xs text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700 pt-3 mt-3">
-									<span class="font-medium">Per-request override:</span> Use
-									model suffix like{" "}
-									<code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">
-										gpt-5(high)
-									</code>{" "}
-									or{" "}
-									<code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">
-										gpt-5.2(low)
-									</code>
-								</p>
-							</div>
-						</div>
-					</div>
-
-					{/* Claude Code Settings */}
-					<div
-						class="space-y-4"
-						classList={{ hidden: activeTab() !== "general" }}
-					>
-						<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
-							Claude Code Settings
-						</h2>
-
-						<div class="space-y-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
-							<p class="text-xs text-gray-500 dark:text-gray-400">
-								Map Claude Code model slots to available provider models. These
-								settings modify the claude_desktop_config.json file.
-							</p>
-
-							<div class="space-y-3">
-								{(() => {
-									const { customModels, builtInModels } =
-										getAvailableTargetModels();
-									const hasModels =
-										customModels.length > 0 ||
-										builtInModels.anthropic.length > 0 ||
-										builtInModels.google.length > 0 ||
-										builtInModels.openai.length > 0 ||
-										builtInModels.copilot.length > 0;
-
-									if (!hasModels) {
-										return (
-											<p class="text-sm text-gray-500 dark:text-gray-400 italic">
-												No models available. Please authenticate with a provider
-												first.
-											</p>
-										);
-									}
-
-									const ModelSelect = (props: {
-										label: string;
-										value: string | null;
-										modelType: "haikuModel" | "opusModel" | "sonnetModel";
-									}) => (
-										<label class="block">
-											<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-												{props.label}
-											</span>
-											<select
-												value={props.value || ""}
-												onChange={(e) =>
-													handleClaudeCodeSettingChange(
-														props.modelType,
-														e.currentTarget.value,
-													)
-												}
-												class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth [&>option]:bg-white [&>option]:dark:bg-gray-900 [&>option]:text-gray-900 [&>option]:dark:text-gray-100 [&>optgroup]:bg-white [&>optgroup]:dark:bg-gray-900 [&>optgroup]:text-gray-900 [&>optgroup]:dark:text-gray-100"
-											>
-												<option value="">Select model...</option>
-												<Show when={customModels.length > 0}>
-													<optgroup label="Custom Providers">
-														<For each={customModels}>
-															{(model) => (
-																<option value={model.value}>
-																	{model.label}
-																</option>
-															)}
-														</For>
-													</optgroup>
-												</Show>
-												<Show when={builtInModels.anthropic.length > 0}>
-													<optgroup label="Anthropic">
-														<For each={builtInModels.anthropic}>
-															{(model) => (
-																<option value={model.value}>
-																	{model.label}
-																</option>
-															)}
-														</For>
-													</optgroup>
-												</Show>
-												<Show when={builtInModels.google.length > 0}>
-													<optgroup label="Google">
-														<For each={builtInModels.google}>
-															{(model) => (
-																<option value={model.value}>
-																	{model.label}
-																</option>
-															)}
-														</For>
-													</optgroup>
-												</Show>
-												<Show when={builtInModels.openai.length > 0}>
-													<optgroup label="OpenAI">
-														<For each={builtInModels.openai}>
-															{(model) => (
-																<option value={model.value}>
-																	{model.label}
-																</option>
-															)}
-														</For>
-													</optgroup>
-												</Show>
-												<Show when={builtInModels.copilot.length > 0}>
-													<optgroup label="GitHub Copilot">
-														<For each={builtInModels.copilot}>
-															{(model) => (
-																<option value={model.value}>
-																	{model.label}
-																</option>
-															)}
-														</For>
-													</optgroup>
-												</Show>
-												<Show when={builtInModels.qwen.length > 0}>
-													<optgroup label="Qwen">
-														<For each={builtInModels.qwen}>
-															{(model) => (
-																<option value={model.value}>
-																	{model.label}
-																</option>
-															)}
-														</For>
-													</optgroup>
-												</Show>
-												<Show when={builtInModels.iflow.length > 0}>
-													<optgroup label="iFlow">
-														<For each={builtInModels.iflow}>
-															{(model) => (
-																<option value={model.value}>
-																	{model.label}
-																</option>
-															)}
-														</For>
-													</optgroup>
-												</Show>
-											</select>
-										</label>
-									);
-
-									return (
-										<>
-											<ModelSelect
-												label="Haiku Model"
-												value={claudeCodeSettings().haikuModel}
-												modelType="haikuModel"
-											/>
-											<ModelSelect
-												label="Sonnet Model"
-												value={claudeCodeSettings().sonnetModel}
-												modelType="sonnetModel"
-											/>
-											<ModelSelect
-												label="Opus Model"
-												value={claudeCodeSettings().opusModel}
-												modelType="opusModel"
-											/>
-										</>
-									);
-								})()}
-							</div>
-						</div>
-					</div>
-
-					{/* Amp CLI Integration */}
-					<div
-						class="space-y-4"
-						classList={{ hidden: activeTab() !== "general" }}
-					>
-						<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
-							Amp CLI Integration
-						</h2>
-
-						<div class="space-y-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
-							<label class="block">
-								<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-									Amp API Key
-								</span>
-								<input
-									type="password"
-									value={config().ampApiKey || ""}
-									onInput={(e) =>
-										handleConfigChange("ampApiKey", e.currentTarget.value)
-									}
-									placeholder="amp_..."
-									class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth font-mono"
-								/>
-								<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-									Get your API key from{" "}
-									<a
-										href="https://ampcode.com/settings"
-										target="_blank"
-										rel="noopener noreferrer"
-										class="text-brand-500 hover:text-brand-600 underline"
-									>
-										ampcode.com/settings
-									</a>
-									. Required for Amp CLI to authenticate through the proxy.
-								</p>
-							</label>
-
-							<div class="border-t border-gray-200 dark:border-gray-700" />
-
-							{/* Model Mappings */}
-							<div class="space-y-3">
-								<div>
-									<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-										Model Mappings
-									</span>
-									<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-										Route Amp model requests to different providers
-									</p>
-								</div>
-
-								{/* Prioritize Model Mappings Toggle */}
-								<Show when={appStore.proxyStatus().running}>
-									<div class="flex items-center justify-between p-3 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700">
-										<div class="flex-1">
-											<div class="flex items-center gap-2">
-												<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-													Prioritize Model Mappings
-												</span>
-												<Show when={savingForceModelMappings()}>
-													<svg
-														class="w-4 h-4 animate-spin text-brand-500"
-														fill="none"
-														viewBox="0 0 24 24"
-													>
-														<circle
-															class="opacity-25"
-															cx="12"
-															cy="12"
-															r="10"
-															stroke="currentColor"
-															stroke-width="4"
-														/>
-														<path
-															class="opacity-75"
-															fill="currentColor"
-															d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-														/>
-													</svg>
-												</Show>
-											</div>
-											<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-												Model mappings take precedence over local API keys.
-												Enable to route mapped models via OAuth instead of local
-												keys.
-											</p>
-										</div>
-										<button
-											type="button"
-											role="switch"
-											aria-checked={forceModelMappings()}
-											disabled={savingForceModelMappings()}
-											onClick={() =>
-												handleForceModelMappingsChange(!forceModelMappings())
-											}
-											class={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 disabled:opacity-50 ${forceModelMappings()
-													? "bg-brand-600"
-													: "bg-gray-200 dark:bg-gray-700"
-												}`}
-										>
-											<span
-												aria-hidden="true"
-												class={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${forceModelMappings()
-														? "translate-x-5"
-														: "translate-x-0"
-													}`}
-											/>
-										</button>
-									</div>
-								</Show>
-
-								{/* Slot-based mappings */}
-								<div class="space-y-2">
-									<For each={AMP_MODEL_SLOTS}>
-										{(slot) => {
-											const mapping = () => getMappingForSlot(slot.id);
-											const isEnabled = () => !!mapping();
-											const currentTarget = () => mapping()?.alias || "";
-
-											return (
-												<div class="p-3 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700">
-													{/* Mobile: Stack vertically, Desktop: Single row */}
-													<div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-														{/* Left side: Checkbox + Slot name */}
-														<div class="flex items-center gap-2 shrink-0">
-															<input
-																type="checkbox"
-																checked={isEnabled()}
-																onChange={(e) => {
-																	const checked = e.currentTarget.checked;
-																	if (checked) {
-																		const { customModels, builtInModels } =
-																			getAvailableTargetModels();
-																		const defaultTarget =
-																			customModels[0]?.value ||
-																			builtInModels.google[0]?.value ||
-																			slot.fromModel;
-																		updateSlotMapping(
-																			slot.id,
-																			defaultTarget,
-																			true,
-																		);
-																	} else {
-																		updateSlotMapping(slot.id, "", false);
-																	}
-																}}
-																class="w-4 h-4 text-brand-500 bg-gray-100 border-gray-300 rounded focus:ring-brand-500 dark:focus:ring-brand-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
-															/>
-															<span class="text-sm font-medium text-gray-700 dark:text-gray-300 w-20">
-																{slot.name}
-															</span>
-														</div>
-
-														{/* Right side: From -> To mapping */}
-														<div class="flex items-center gap-2 flex-1 min-w-0">
-															{/* From model (readonly) - fixed width, truncate on small screens */}
-															<div
-																class="w-24 sm:w-28 shrink-0 px-2 py-1.5 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg text-xs text-gray-600 dark:text-gray-400 truncate"
-																title={slot.fromLabel}
-															>
-																{slot.fromLabel}
-															</div>
-
-															{/* Arrow */}
-															<span class="text-gray-400 text-xs shrink-0">
-																→
-															</span>
-
-															{/* To model (dropdown) */}
-															{(() => {
-																const { customModels, builtInModels } =
-																	getAvailableTargetModels();
-																return (
-																	<select
-																		value={currentTarget()}
-																		onChange={(e) => {
-																			const newTarget = e.currentTarget.value;
-																			updateSlotMapping(
-																				slot.id,
-																				newTarget,
-																				true,
-																			);
-																		}}
-																		disabled={!isEnabled()}
-																		class={`flex-1 min-w-0 px-2 py-1.5 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-lg text-xs focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth [&>option]:bg-white [&>option]:dark:bg-gray-900 [&>option]:text-gray-900 [&>option]:dark:text-gray-100 [&>optgroup]:bg-white [&>optgroup]:dark:bg-gray-900 [&>optgroup]:text-gray-900 [&>optgroup]:dark:text-gray-100 ${!isEnabled()
-																				? "opacity-50 cursor-not-allowed"
-																				: ""
-																			}`}
-																	>
-																		<option value="">Select target...</option>
-																		<Show when={customModels.length > 0}>
-																			<optgroup label="Custom Provider">
-																				<For each={customModels}>
-																					{(model) => (
-																						<option value={model.value}>
-																							{model.label}
-																						</option>
-																					)}
-																				</For>
-																			</optgroup>
-																		</Show>
-																		<optgroup label="Anthropic">
-																			<For each={builtInModels.anthropic}>
-																				{(model) => (
-																					<option value={model.value}>
-																						{model.label}
-																					</option>
-																				)}
-																			</For>
-																		</optgroup>
-																		<optgroup label="Google">
-																			<For each={builtInModels.google}>
-																				{(model) => (
-																					<option value={model.value}>
-																						{model.label}
-																					</option>
-																				)}
-																			</For>
-																		</optgroup>
-																		<optgroup label="OpenAI">
-																			<For each={builtInModels.openai}>
-																				{(model) => (
-																					<option value={model.value}>
-																						{model.label}
-																					</option>
-																				)}
-																			</For>
-																		</optgroup>
-																		<optgroup label="Qwen">
-																			<For each={builtInModels.qwen}>
-																				{(model) => (
-																					<option value={model.value}>
-																						{model.label}
-																					</option>
-																				)}
-																			</For>
-																		</optgroup>
-																		<Show when={builtInModels.iflow.length > 0}>
-																			<optgroup label="iFlow">
-																				<For each={builtInModels.iflow}>
-																					{(model) => (
-																						<option value={model.value}>
-																							{model.label}
-																						</option>
-																					)}
-																				</For>
-																			</optgroup>
-																		</Show>
-																		<Show
-																			when={builtInModels.copilot.length > 0}
-																		>
-																			<optgroup label="GitHub Copilot">
-																				<For each={builtInModels.copilot}>
-																					{(model) => (
-																						<option value={model.value}>
-																							{model.label}
-																						</option>
-																					)}
-																				</For>
-																			</optgroup>
-																		</Show>
-																	</select>
-																);
-															})()}
-
-															{/* Fork toggle */}
-															<Show when={isEnabled()}>
-																<button
-																	type="button"
-																	onClick={() => {
-																		const currentFork =
-																			mapping()?.fork ?? false;
-																		updateSlotMapping(
-																			slot.id,
-																			currentTarget(),
-																			true,
-																			!currentFork,
-																		);
-																	}}
-																	class={`shrink-0 px-2 py-1 text-xs rounded border transition-colors ${mapping()?.fork
-																			? "bg-amber-100 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300"
-																			: "bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
-																		}`}
-																	title="Fork: Send request to both original and mapped model"
-																>
-																	Fork
-																</button>
-															</Show>
-														</div>
-													</div>
-												</div>
-											);
-										}}
-									</For>
-								</div>
-
-								{/* Custom Mappings Section */}
-								<div class="pt-2">
-									<p class="text-xs text-gray-500 dark:text-gray-400 mb-2">
-										Custom model mappings (for models not in predefined slots)
-									</p>
-
-									{/* Existing custom mappings */}
-									<For each={getCustomMappings()}>
-										{(mapping) => {
-											const { customModels, builtInModels } =
-												getAvailableTargetModels();
-											return (
-												<div class="p-3 mb-2 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700">
-													<div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-														{/* Checkbox */}
-														<div class="flex items-center gap-2 shrink-0">
-															<input
-																type="checkbox"
-																checked={mapping.enabled !== false}
-																onChange={(e) => {
-																	updateCustomMapping(
-																		mapping.name,
-																		mapping.alias,
-																		e.currentTarget.checked,
-																	);
-																}}
-																class="w-4 h-4 text-brand-500 bg-gray-100 border-gray-300 rounded focus:ring-brand-500 dark:focus:ring-brand-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
-															/>
-															<span class="text-xs text-gray-500 dark:text-gray-400 sm:hidden">
-																Custom
-															</span>
-														</div>
-
-														{/* Mapping content */}
-														<div class="flex items-center gap-2 flex-1 min-w-0">
-															{/* From model (readonly) */}
-															<div
-																class="w-28 sm:w-32 shrink-0 px-2 py-1.5 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg text-xs text-gray-600 dark:text-gray-400 font-mono truncate"
-																title={mapping.name}
-															>
-																{mapping.name}
-															</div>
-
-															{/* Arrow */}
-															<span class="text-gray-400 text-xs shrink-0">
-																→
-															</span>
-
-															{/* To model (dropdown) */}
-															<select
-																value={mapping.alias}
-																onChange={(e) => {
-																	updateCustomMapping(
-																		mapping.name,
-																		e.currentTarget.value,
-																		mapping.enabled !== false,
-																	);
-																}}
-																disabled={mapping.enabled === false}
-																class={`flex-1 min-w-0 px-2 py-1.5 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-lg text-xs focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth [&>option]:bg-white [&>option]:dark:bg-gray-900 [&>option]:text-gray-900 [&>option]:dark:text-gray-100 [&>optgroup]:bg-white [&>optgroup]:dark:bg-gray-900 [&>optgroup]:text-gray-900 [&>optgroup]:dark:text-gray-100 ${mapping.enabled === false
-																		? "opacity-50 cursor-not-allowed"
-																		: ""
-																	}`}
-															>
-																<option value="">Select target...</option>
-																<Show when={customModels.length > 0}>
-																	<optgroup label="Custom Provider">
-																		<For each={customModels}>
-																			{(model) => (
-																				<option value={model.value}>
-																					{model.label}
-																				</option>
-																			)}
-																		</For>
-																	</optgroup>
-																</Show>
-																<optgroup label="Anthropic">
-																	<For each={builtInModels.anthropic}>
-																		{(model) => (
-																			<option value={model.value}>
-																				{model.label}
-																			</option>
-																		)}
-																	</For>
-																</optgroup>
-																<optgroup label="Google">
-																	<For each={builtInModels.google}>
-																		{(model) => (
-																			<option value={model.value}>
-																				{model.label}
-																			</option>
-																		)}
-																	</For>
-																</optgroup>
-																<optgroup label="OpenAI">
-																	<For each={builtInModels.openai}>
-																		{(model) => (
-																			<option value={model.value}>
-																				{model.label}
-																			</option>
-																		)}
-																	</For>
-																</optgroup>
-																<optgroup label="Qwen">
-																	<For each={builtInModels.qwen}>
-																		{(model) => (
-																			<option value={model.value}>
-																				{model.label}
-																			</option>
-																		)}
-																	</For>
-																</optgroup>
-																<Show when={builtInModels.iflow.length > 0}>
-																	<optgroup label="iFlow">
-																		<For each={builtInModels.iflow}>
-																			{(model) => (
-																				<option value={model.value}>
-																					{model.label}
-																				</option>
-																			)}
-																		</For>
-																	</optgroup>
-																</Show>
-																<Show when={builtInModels.copilot.length > 0}>
-																	<optgroup label="GitHub Copilot">
-																		<For each={builtInModels.copilot}>
-																			{(model) => (
-																				<option value={model.value}>
-																					{model.label}
-																				</option>
-																			)}
-																		</For>
-																	</optgroup>
-																</Show>
-															</select>
-
-															{/* Fork toggle */}
-															<Show when={mapping.enabled !== false}>
-																<button
-																	type="button"
-																	onClick={() => {
-																		updateCustomMapping(
-																			mapping.name,
-																			mapping.alias,
-																			mapping.enabled !== false,
-																			!mapping.fork,
-																		);
-																	}}
-																	class={`shrink-0 px-2 py-1 text-xs rounded border transition-colors ${mapping.fork
-																			? "bg-amber-100 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300"
-																			: "bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
-																		}`}
-																	title="Fork: Send request to both original and mapped model"
-																>
-																	Fork
-																</button>
-															</Show>
-
-															{/* Delete button */}
-															<button
-																type="button"
-																onClick={() =>
-																	removeCustomMapping(mapping.name)
-																}
-																class="p-1.5 text-gray-400 hover:text-red-500 transition-colors shrink-0"
-																title="Remove mapping"
-															>
-																<svg
-																	class="w-4 h-4"
-																	fill="none"
-																	stroke="currentColor"
-																	viewBox="0 0 24 24"
-																>
-																	<path
-																		stroke-linecap="round"
-																		stroke-linejoin="round"
-																		stroke-width="2"
-																		d="M6 18L18 6M6 6l12 12"
-																	/>
-																</svg>
-															</button>
-														</div>
-													</div>
-												</div>
-											);
-										}}
-									</For>
-
-									{/* Add new custom mapping */}
-									<div class="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-dashed border-gray-300 dark:border-gray-600">
-										<div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-											<input
-												type="text"
-												value={newMappingFrom()}
-												onInput={(e) =>
-													setNewMappingFrom(e.currentTarget.value)
-												}
-												placeholder="From model (e.g. my-custom-model)"
-												class="flex-1 min-w-0 px-2 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-mono focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth"
-											/>
-											<span class="text-gray-400 text-xs shrink-0 hidden sm:inline">
-												→
-											</span>
-											{(() => {
-												const { customModels, builtInModels } =
-													getAvailableTargetModels();
-												return (
-													<select
-														value={newMappingTo()}
-														onChange={(e) =>
-															setNewMappingTo(e.currentTarget.value)
-														}
-														class="flex-1 min-w-0 px-2 py-1.5 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-lg text-xs focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth [&>option]:bg-white [&>option]:dark:bg-gray-900 [&>option]:text-gray-900 [&>option]:dark:text-gray-100 [&>optgroup]:bg-white [&>optgroup]:dark:bg-gray-900 [&>optgroup]:text-gray-900 [&>optgroup]:dark:text-gray-100"
-													>
-														<option value="">Select target...</option>
-														<Show when={customModels.length > 0}>
-															<optgroup label="Custom Provider">
-																<For each={customModels}>
-																	{(model) => (
-																		<option value={model.value}>
-																			{model.label}
-																		</option>
-																	)}
-																</For>
-															</optgroup>
-														</Show>
-														<optgroup label="Anthropic">
-															<For each={builtInModels.anthropic}>
-																{(model) => (
-																	<option value={model.value}>
-																		{model.label}
-																	</option>
-																)}
-															</For>
-														</optgroup>
-														<optgroup label="Google">
-															<For each={builtInModels.google}>
-																{(model) => (
-																	<option value={model.value}>
-																		{model.label}
-																	</option>
-																)}
-															</For>
-														</optgroup>
-														<optgroup label="OpenAI">
-															<For each={builtInModels.openai}>
-																{(model) => (
-																	<option value={model.value}>
-																		{model.label}
-																	</option>
-																)}
-															</For>
-														</optgroup>
-														<optgroup label="Qwen">
-															<For each={builtInModels.qwen}>
-																{(model) => (
-																	<option value={model.value}>
-																		{model.label}
-																	</option>
-																)}
-															</For>
-														</optgroup>
-														<Show when={builtInModels.iflow.length > 0}>
-															<optgroup label="iFlow">
-																<For each={builtInModels.iflow}>
-																	{(model) => (
-																		<option value={model.value}>
-																			{model.label}
-																		</option>
-																	)}
-																</For>
-															</optgroup>
-														</Show>
-														<Show when={builtInModels.copilot.length > 0}>
-															<optgroup label="GitHub Copilot">
-																<For each={builtInModels.copilot}>
-																	{(model) => (
-																		<option value={model.value}>
-																			{model.label}
-																		</option>
-																	)}
-																</For>
-															</optgroup>
-														</Show>
-													</select>
-												);
-											})()}
-											<Button
-												variant="secondary"
-												size="sm"
-												onClick={addCustomMapping}
-												disabled={
-													!newMappingFrom().trim() || !newMappingTo().trim()
-												}
-												class="shrink-0"
-											>
-												<svg
-													class="w-4 h-4"
-													fill="none"
-													stroke="currentColor"
-													viewBox="0 0 24 24"
-												>
-													<path
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														stroke-width="2"
-														d="M12 4v16m8-8H4"
-													/>
-												</svg>
-											</Button>
-										</div>
-									</div>
-								</div>
-							</div>
-
-							<div class="border-t border-gray-200 dark:border-gray-700" />
-
-							{/* Custom OpenAI-Compatible Providers */}
-							<div class="space-y-4">
-								<div>
-									<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-										Custom OpenAI-Compatible Providers
-									</span>
-									<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-										Add external providers (ZenMux, OpenRouter, etc.) for
-										additional models
-									</p>
-								</div>
-
-								{/* Provider Table */}
-								<Show when={(config().ampOpenaiProviders || []).length > 0}>
-									<div class="overflow-x-auto">
-										<table class="w-full text-sm">
-											<thead>
-												<tr class="text-left text-xs text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
-													<th class="pb-2 font-medium">Name</th>
-													<th class="pb-2 font-medium">Base URL</th>
-													<th class="pb-2 font-medium">Models</th>
-													<th class="pb-2 font-medium w-20">Actions</th>
-												</tr>
-											</thead>
-											<tbody class="divide-y divide-gray-100 dark:divide-gray-800">
-												<For each={config().ampOpenaiProviders || []}>
-													{(provider) => (
-														<tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50">
-															<td class="py-2 pr-2">
-																<span class="font-medium text-gray-900 dark:text-gray-100">
-																	{provider.name}
-																</span>
-															</td>
-															<td class="py-2 pr-2">
-																<span
-																	class="text-xs text-gray-500 dark:text-gray-400 font-mono truncate max-w-[200px] block"
-																	title={provider.baseUrl}
-																>
-																	{provider.baseUrl}
-																</span>
-															</td>
-															<td class="py-2 pr-2">
-																<span class="text-xs text-gray-500 dark:text-gray-400">
-																	{provider.models?.length || 0} model
-																	{(provider.models?.length || 0) !== 1
-																		? "s"
-																		: ""}
-																</span>
-															</td>
-															<td class="py-2">
-																<div class="flex items-center gap-1">
-																	<button
-																		type="button"
-																		onClick={() => openProviderModal(provider)}
-																		class="p-1.5 text-gray-400 hover:text-brand-500 transition-colors"
-																		title="Edit provider"
-																	>
-																		<svg
-																			class="w-4 h-4"
-																			fill="none"
-																			stroke="currentColor"
-																			viewBox="0 0 24 24"
-																		>
-																			<path
-																				stroke-linecap="round"
-																				stroke-linejoin="round"
-																				stroke-width="2"
-																				d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-																			/>
-																		</svg>
-																	</button>
-																	<button
-																		type="button"
-																		onClick={() =>
-																			deleteOpenAIProvider(provider.id)
-																		}
-																		class="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
-																		title="Delete provider"
-																	>
-																		<svg
-																			class="w-4 h-4"
-																			fill="none"
-																			stroke="currentColor"
-																			viewBox="0 0 24 24"
-																		>
-																			<path
-																				stroke-linecap="round"
-																				stroke-linejoin="round"
-																				stroke-width="2"
-																				d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-																			/>
-																		</svg>
-																	</button>
-																</div>
-															</td>
-														</tr>
-													)}
-												</For>
-											</tbody>
-										</table>
-									</div>
-								</Show>
-
-								{/* Empty state */}
-								<Show when={(config().ampOpenaiProviders || []).length === 0}>
-									<div class="text-center py-6 text-gray-400 dark:text-gray-500 text-sm">
-										No custom providers configured
-									</div>
-								</Show>
-
-								{/* Add Provider Button */}
-								<Button
-									variant="secondary"
-									size="sm"
-									onClick={() => openProviderModal()}
-									class="w-full"
-								>
-									<svg
-										class="w-4 h-4 mr-1.5"
-										fill="none"
-										stroke="currentColor"
-										viewBox="0 0 24 24"
-									>
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											stroke-width="2"
-											d="M12 4v16m8-8H4"
-										/>
-									</svg>
-									Add Provider
-								</Button>
-							</div>
-
-							{/* Provider Modal */}
-							<Show when={providerModalOpen()}>
-								<div
-									class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
-									onClick={(e) => {
-										if (e.target === e.currentTarget) closeProviderModal();
-									}}
-								>
-									<div
-										class="bg-white dark:bg-gray-900 rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
-										onClick={(e) => e.stopPropagation()}
-									>
-										<div class="sticky top-0 bg-white dark:bg-gray-900 px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-											<h3 class="font-semibold text-gray-900 dark:text-gray-100">
-												{editingProviderId() ? "Edit Provider" : "Add Provider"}
-											</h3>
-											<button
-												type="button"
-												onClick={closeProviderModal}
-												class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-											>
-												<svg
-													class="w-5 h-5"
-													fill="none"
-													stroke="currentColor"
-													viewBox="0 0 24 24"
-												>
-													<path
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														stroke-width="2"
-														d="M6 18L18 6M6 6l12 12"
-													/>
-												</svg>
-											</button>
-										</div>
-
-										<div class="p-4 space-y-4">
-											{/* Provider Name */}
-											<label class="block">
-												<span class="text-xs font-medium text-gray-600 dark:text-gray-400">
-													Provider Name
-												</span>
-												<input
-													type="text"
-													value={providerName()}
-													onInput={(e) =>
-														setProviderName(e.currentTarget.value)
-													}
-													placeholder="e.g. zenmux, openrouter"
-													class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth"
-												/>
-											</label>
-
-											{/* Base URL */}
-											<label class="block">
-												<span class="text-xs font-medium text-gray-600 dark:text-gray-400">
-													Base URL
-												</span>
-												<input
-													type="text"
-													value={providerBaseUrl()}
-													onInput={(e) =>
-														setProviderBaseUrl(e.currentTarget.value)
-													}
-													placeholder="https://api.example.com/v1"
-													class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-mono focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth"
-												/>
-											</label>
-
-											{/* API Key */}
-											<label class="block">
-												<span class="text-xs font-medium text-gray-600 dark:text-gray-400">
-													API Key
-												</span>
-												<input
-													type="password"
-													value={providerApiKey()}
-													onInput={(e) =>
-														setProviderApiKey(e.currentTarget.value)
-													}
-													placeholder="sk-..."
-													class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-mono focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth"
-												/>
-											</label>
-
-											{/* Models */}
-											<div class="space-y-2">
-												<span class="text-xs font-medium text-gray-600 dark:text-gray-400">
-													Model Aliases (map proxy model names to provider model
-													names)
-												</span>
-
-												{/* Existing models */}
-												<For each={providerModels()}>
-													{(model, index) => (
-														<div class="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-															<div class="flex-1 flex items-center gap-2 text-xs font-mono overflow-hidden">
-																<span
-																	class="text-gray-700 dark:text-gray-300 truncate"
-																	title={model.name}
-																>
-																	{model.name}
-																</span>
-																<Show when={model.alias}>
-																	<svg
-																		class="w-4 h-4 text-gray-400 flex-shrink-0"
-																		fill="none"
-																		stroke="currentColor"
-																		viewBox="0 0 24 24"
-																	>
-																		<path
-																			stroke-linecap="round"
-																			stroke-linejoin="round"
-																			stroke-width="2"
-																			d="M13 7l5 5m0 0l-5 5m5-5H6"
-																		/>
-																	</svg>
-																	<span
-																		class="text-brand-500 truncate"
-																		title={model.alias}
-																	>
-																		{model.alias}
-																	</span>
-																</Show>
-															</div>
-															<button
-																type="button"
-																onClick={() => removeProviderModel(index())}
-																class="p-1 text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
-																title="Remove model"
-															>
-																<svg
-																	class="w-4 h-4"
-																	fill="none"
-																	stroke="currentColor"
-																	viewBox="0 0 24 24"
-																>
-																	<path
-																		stroke-linecap="round"
-																		stroke-linejoin="round"
-																		stroke-width="2"
-																		d="M6 18L18 6M6 6l12 12"
-																	/>
-																</svg>
-															</button>
-														</div>
-													)}
-												</For>
-
-												{/* Add new model */}
-												<div class="flex flex-col sm:flex-row gap-2">
-													<input
-														type="text"
-														value={newModelName()}
-														onInput={(e) =>
-															setNewModelName(e.currentTarget.value)
-														}
-														placeholder="Provider model (e.g. anthropic/claude-4)"
-														class="flex-1 px-2 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-mono focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth"
-													/>
-													<input
-														type="text"
-														value={newModelAlias()}
-														onInput={(e) =>
-															setNewModelAlias(e.currentTarget.value)
-														}
-														placeholder="Alias (e.g. claude-4-20251101)"
-														class="flex-1 px-2 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-mono focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth"
-													/>
-													<Button
-														variant="secondary"
-														size="sm"
-														onClick={addProviderModel}
-														disabled={!newModelName().trim()}
-													>
-														<svg
-															class="w-4 h-4"
-															fill="none"
-															stroke="currentColor"
-															viewBox="0 0 24 24"
-														>
-															<path
-																stroke-linecap="round"
-																stroke-linejoin="round"
-																stroke-width="2"
-																d="M12 4v16m8-8H4"
-															/>
-														</svg>
-													</Button>
-												</div>
-											</div>
-
-											{/* Test Connection */}
-											<div class="flex items-center gap-2">
-												<Button
-													variant="secondary"
-													size="sm"
-													onClick={testProviderConnection}
-													disabled={
-														testingProvider() ||
-														!providerBaseUrl().trim() ||
-														!providerApiKey().trim()
-													}
-												>
-													{testingProvider() ? (
-														<span class="flex items-center gap-1.5">
-															<svg
-																class="w-3 h-3 animate-spin"
-																fill="none"
-																viewBox="0 0 24 24"
-															>
-																<circle
-																	class="opacity-25"
-																	cx="12"
-																	cy="12"
-																	r="10"
-																	stroke="currentColor"
-																	stroke-width="4"
-																/>
-																<path
-																	class="opacity-75"
-																	fill="currentColor"
-																	d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-																/>
-															</svg>
-															Testing...
-														</span>
-													) : (
-														"Test Connection"
-													)}
-												</Button>
-											</div>
-
-											{/* Test result indicator */}
-											<Show when={providerTestResult()}>
-												{(result) => (
-													<div
-														class={`flex items-center gap-2 p-2 rounded-lg text-xs ${result().success
-																? "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400"
-																: "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400"
-															}`}
-													>
-														<Show
-															when={result().success}
-															fallback={
-																<svg
-																	class="w-4 h-4 flex-shrink-0"
-																	fill="none"
-																	stroke="currentColor"
-																	viewBox="0 0 24 24"
-																>
-																	<path
-																		stroke-linecap="round"
-																		stroke-linejoin="round"
-																		stroke-width="2"
-																		d="M6 18L18 6M6 6l12 12"
-																	/>
-																</svg>
-															}
-														>
-															<svg
-																class="w-4 h-4 flex-shrink-0"
-																fill="none"
-																stroke="currentColor"
-																viewBox="0 0 24 24"
-															>
-																<path
-																	stroke-linecap="round"
-																	stroke-linejoin="round"
-																	stroke-width="2"
-																	d="M5 13l4 4L19 7"
-																/>
-															</svg>
-														</Show>
-														<span>{result().message}</span>
-														<Show when={result().modelsFound}>
-															<span class="text-gray-500 dark:text-gray-400">
-																({result().modelsFound} models)
-															</span>
-														</Show>
-														<Show when={result().latencyMs}>
-															<span class="text-gray-500 dark:text-gray-400">
-																{result().latencyMs}ms
-															</span>
-														</Show>
-													</div>
-												)}
-											</Show>
-										</div>
-
-										{/* Modal Footer */}
-										<div class="sticky bottom-0 bg-white dark:bg-gray-900 px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
-											<Button
-												variant="ghost"
-												size="sm"
-												onClick={closeProviderModal}
-											>
-												Cancel
-											</Button>
-											<Button
-												variant="primary"
-												size="sm"
-												onClick={saveOpenAIProvider}
-												disabled={
-													!providerName().trim() ||
-													!providerBaseUrl().trim() ||
-													!providerApiKey().trim()
-												}
-											>
-												{editingProviderId() ? "Save Changes" : "Add Provider"}
-											</Button>
-										</div>
-									</div>
-								</div>
-							</Show>
-
-							<p class="text-xs text-gray-400 dark:text-gray-500">
-								After changing settings, restart the proxy for changes to take
-								effect.
-							</p>
-						</div>
-					</div>
-
-					{/* Advanced Settings */}
-					<div
-						class="space-y-4"
-						classList={{ hidden: activeTab() !== "advanced" }}
-					>
-						<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
-							Advanced Settings
-						</h2>
-
-						<div class="space-y-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
-							<Switch
-								label="Debug Mode"
-								description="Enable verbose logging for troubleshooting"
-								checked={config().debug}
-								onChange={(checked) => handleConfigChange("debug", checked)}
-							/>
-
-							<div class="border-t border-gray-200 dark:border-gray-700" />
-
-							<Switch
-								label="Usage Statistics"
-								description="Track request counts and token usage"
-								checked={config().usageStatsEnabled}
-								onChange={(checked) =>
-									handleConfigChange("usageStatsEnabled", checked)
-								}
-							/>
-
-							<div class="border-t border-gray-200 dark:border-gray-700" />
-
-							<Switch
-								label="Request Logging"
-								description="Log all API requests for debugging"
-								checked={config().requestLogging}
-								onChange={(checked) =>
-									handleConfigChange("requestLogging", checked)
-								}
-							/>
-
-							<div class="border-t border-gray-200 dark:border-gray-700" />
-
-							<Switch
-								label="Commercial Mode"
-								description="Disable request logging middleware for lower memory usage (requires restart)"
-								checked={config().commercialMode ?? false}
-								onChange={(checked) =>
-									handleConfigChange("commercialMode", checked)
-								}
-							/>
-
-							<div class="border-t border-gray-200 dark:border-gray-700" />
-
-							<Switch
-								label="Log to File"
-								description="Write logs to rotating files instead of stdout"
-								checked={config().loggingToFile}
-								onChange={(checked) =>
-									handleConfigChange("loggingToFile", checked)
-								}
-							/>
-
-							<Show when={config().loggingToFile}>
-								<div class="flex items-center justify-between">
-									<div class="flex-1">
-										<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-											Max Log Size (MB)
-										</span>
-										<p class="text-xs text-gray-500 dark:text-gray-400">
-											Maximum total size of log files before rotation
-										</p>
-									</div>
-									<input
-										type="number"
-										min="10"
-										max="1000"
-										value={config().logsMaxTotalSizeMb || 100}
-										onChange={(e) =>
-											handleConfigChange(
-												"logsMaxTotalSizeMb",
-												parseInt(e.currentTarget.value) || 100,
-											)
-										}
-										class="w-24 px-3 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-right focus:ring-2 focus:ring-brand-500 focus:border-transparent"
-									/>
-								</div>
-							</Show>
-
-							<Show when={appStore.proxyStatus().running}>
-								<div class="border-t border-gray-200 dark:border-gray-700" />
-
-								<div class="flex items-center justify-between">
-									<div class="flex-1">
-										<div class="flex items-center gap-2">
-											<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-												WebSocket Authentication
-											</span>
-											<Show when={savingWebsocketAuth()}>
-												<svg
-													class="w-4 h-4 animate-spin text-brand-500"
-													fill="none"
-													viewBox="0 0 24 24"
-												>
-													<circle
-														class="opacity-25"
-														cx="12"
-														cy="12"
-														r="10"
-														stroke="currentColor"
-														stroke-width="4"
-													/>
-													<path
-														class="opacity-75"
-														fill="currentColor"
-														d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-													/>
-												</svg>
-											</Show>
-										</div>
-										<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-											Require authentication for WebSocket connections. Updates
-											live without restart.
-										</p>
-									</div>
-									<button
-										type="button"
-										role="switch"
-										aria-checked={websocketAuth()}
-										disabled={savingWebsocketAuth()}
-										onClick={() => handleWebsocketAuthChange(!websocketAuth())}
-										class={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 disabled:opacity-50 ${websocketAuth()
-												? "bg-brand-600"
-												: "bg-gray-200 dark:bg-gray-700"
-											}`}
-									>
-										<span
-											aria-hidden="true"
-											class={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${websocketAuth() ? "translate-x-5" : "translate-x-0"
-												}`}
-										/>
-									</button>
-								</div>
-							</Show>
-						</div>
-					</div>
-
-					{/* Quota Exceeded Behavior */}
-					<div
-						class="space-y-4"
-						classList={{ hidden: activeTab() !== "advanced" }}
-					>
-						<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
-							Quota Exceeded Behavior
-						</h2>
-
-						<div class="space-y-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
-							<Switch
-								label="Auto-switch Project"
-								description="Automatically switch to another project when quota is exceeded"
-								checked={config().quotaSwitchProject}
-								onChange={(checked) =>
-									handleConfigChange("quotaSwitchProject", checked)
-								}
-							/>
-
-							<div class="border-t border-gray-200 dark:border-gray-700" />
-
-							<Switch
-								label="Switch to Preview Model"
-								description="Fall back to preview/beta models when quota is exceeded"
-								checked={config().quotaSwitchPreviewModel}
-								onChange={(checked) =>
-									handleConfigChange("quotaSwitchPreviewModel", checked)
-								}
-							/>
-						</div>
-					</div>
-
-					{/* OAuth Excluded Models */}
-					<Show when={appStore.proxyStatus().running}>
-						<div
-							class="space-y-4"
-							classList={{ hidden: activeTab() !== "advanced" }}
-						>
-							<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
-								OAuth Excluded Models
-							</h2>
-
-							<div class="space-y-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
-								<p class="text-xs text-gray-500 dark:text-gray-400">
-									Block specific models from being used with OAuth providers.
-									Updates live without restart.
-								</p>
-
-								{/* Add new exclusion form */}
-								<div class="flex gap-2">
-									<select
-										value={newExcludedProvider()}
-										onChange={(e) =>
-											setNewExcludedProvider(e.currentTarget.value)
-										}
-										class="flex-1 px-3 py-2 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent [&>option]:bg-white [&>option]:dark:bg-gray-900 [&>option]:text-gray-900 [&>option]:dark:text-gray-100"
-									>
-										<option value="">Select provider...</option>
-										<option value="gemini">Gemini</option>
-										<option value="claude">Claude</option>
-										<option value="qwen">Qwen</option>
-										<option value="iflow">iFlow</option>
-										<option value="openai">OpenAI</option>
-										<option value="copilot">GitHub Copilot</option>
-									</select>
-									{/* Model dropdown with mapped models from Amp CLI */}
-									{(() => {
-										const mappings = config().ampModelMappings || [];
-										const mappedModels = mappings
-											.filter((m) => m.enabled !== false && m.alias)
-											.map((m) => m.alias);
-										const { builtInModels } = getAvailableTargetModels();
-
-										// Get models for selected provider
-										const getModelsForProvider = () => {
-											const provider = newExcludedProvider();
-											switch (provider) {
-												case "gemini":
-													return builtInModels.google;
-												case "claude":
-													return builtInModels.anthropic;
-												case "openai":
-													return builtInModels.openai;
-												case "qwen":
-													return builtInModels.qwen;
-												case "iflow":
-													return builtInModels.iflow;
-												case "copilot":
-													return builtInModels.copilot;
-												default:
-													return [];
-											}
-										};
-
-										return (
-											<select
-												value={newExcludedModel()}
-												onChange={(e) =>
-													setNewExcludedModel(e.currentTarget.value)
-												}
-												class="flex-[2] px-3 py-2 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent [&>option]:bg-white [&>option]:dark:bg-gray-900 [&>option]:text-gray-900 [&>option]:dark:text-gray-100 [&>optgroup]:bg-white [&>optgroup]:dark:bg-gray-900 [&>optgroup]:text-gray-900 [&>optgroup]:dark:text-gray-100"
-											>
-												<option value="">Select model...</option>
-												{/* Amp Model Mappings (target models) */}
-												<Show when={mappedModels.length > 0}>
-													<optgroup label="Amp Model Mappings">
-														<For each={[...new Set(mappedModels)]}>
-															{(model) => (
-																<option value={model}>{model}</option>
-															)}
-														</For>
-													</optgroup>
-												</Show>
-												{/* Provider-specific models */}
-												<Show when={getModelsForProvider().length > 0}>
-													<optgroup
-														label={`${newExcludedProvider() || "Provider"} Models`}
-													>
-														<For each={getModelsForProvider()}>
-															{(model) => (
-																<option value={model.value}>
-																	{model.label}
-																</option>
-															)}
-														</For>
-													</optgroup>
-												</Show>
-											</select>
-										);
-									})()}
-									<Button
-										variant="primary"
-										size="sm"
-										onClick={handleAddExcludedModel}
-										disabled={
-											savingExcludedModels() ||
-											!newExcludedProvider() ||
-											!newExcludedModel()
-										}
-									>
-										<Show
-											when={savingExcludedModels()}
-											fallback={<span>Add</span>}
 										>
 											<svg
-												class="w-4 h-4 animate-spin"
+												class="w-4 h-4 animate-spin mr-1.5"
 												fill="none"
 												viewBox="0 0 24 24"
 											>
@@ -3917,1129 +1743,36 @@ export function SettingsPage() {
 													d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
 												/>
 											</svg>
+											Checking...
 										</Show>
 									</Button>
 								</div>
 
-								{/* Current exclusions */}
-								<Show when={loadingExcludedModels()}>
-									<div class="text-center py-4 text-gray-500">Loading...</div>
-								</Show>
-
-								<Show
-									when={
-										!loadingExcludedModels() &&
-										Object.keys(oauthExcludedModels()).length === 0
-									}
-								>
-									<div class="text-center py-4 text-gray-400 dark:text-gray-500 text-sm">
-										No models excluded yet
-									</div>
-								</Show>
-
-								<Show
-									when={
-										!loadingExcludedModels() &&
-										Object.keys(oauthExcludedModels()).length > 0
-									}
-								>
-									<div class="space-y-3">
-										<For each={Object.entries(oauthExcludedModels())}>
-											{([provider, models]) => (
-												<div class="space-y-2">
-													<div class="flex items-center gap-2">
-														<span class="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase">
-															{provider}
-														</span>
-														<span class="text-xs text-gray-400">
-															({models.length} excluded)
-														</span>
-													</div>
-													<div class="flex flex-wrap gap-2">
-														<For each={models}>
-															{(model) => (
-																<span class="inline-flex items-center gap-1 px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-md text-xs">
-																	{model}
-																	<button
-																		type="button"
-																		onClick={() =>
-																			handleRemoveExcludedModel(provider, model)
-																		}
-																		disabled={savingExcludedModels()}
-																		class="hover:text-red-900 dark:hover:text-red-300 disabled:opacity-50"
-																		title="Remove"
-																	>
-																		<svg
-																			class="w-3 h-3"
-																			fill="none"
-																			stroke="currentColor"
-																			viewBox="0 0 24 24"
-																		>
-																			<path
-																				stroke-linecap="round"
-																				stroke-linejoin="round"
-																				stroke-width="2"
-																				d="M6 18L18 6M6 6l12 12"
-																			/>
-																		</svg>
-																	</button>
-																</span>
-															)}
-														</For>
-													</div>
-												</div>
-											)}
-										</For>
-									</div>
-								</Show>
-							</div>
-						</div>
-					</Show>
-
-					{/* Copilot Detection */}
-					<div
-						class="space-y-4"
-						classList={{ hidden: activeTab() !== "providers" }}
-					>
-						<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
-							Copilot API Detection
-						</h2>
-
-						<div class="space-y-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
-							<p class="text-xs text-gray-500 dark:text-gray-400">
-								ProxyPal automatically detects and uses copilot-api for GitHub
-								Copilot integration. No manual setup required - it works
-								automatically.
-							</p>
-
-							<Button
-								variant="secondary"
-								size="sm"
-								onClick={runCopilotDetection}
-								disabled={detectingCopilot()}
-							>
-								{detectingCopilot() ? "Detecting..." : "Check System"}
-							</Button>
-
-							<Show when={copilotDetection()}>
-								{(detection) => (
-									<div class="space-y-3 text-xs">
-										<div class="flex items-center gap-2">
-											<span
-												class={`w-2 h-2 rounded-full ${detection().nodeAvailable ? "bg-green-500" : "bg-red-500"}`}
-											/>
-											<span class="font-medium">Node.js:</span>
-											<span
-												class={
-													detection().nodeAvailable
-														? "text-green-600 dark:text-green-400"
-														: "text-red-600 dark:text-red-400"
-												}
-											>
-												{detection().nodeAvailable
-													? detection().nodeBin || "Available"
-													: "Not Found"}
-											</span>
-										</div>
-
-										<div class="flex items-center gap-2">
-											<span
-												class={`w-2 h-2 rounded-full ${detection().installed ? "bg-green-500" : "bg-blue-500"}`}
-											/>
-											<span class="font-medium">copilot-api:</span>
-											<span
-												class={
-													detection().installed
-														? "text-green-600 dark:text-green-400"
-														: "text-blue-600 dark:text-blue-400"
-												}
-											>
-												{detection().installed
-													? `Installed${detection().version ? ` (v${detection().version})` : ""}`
-													: "Will download automatically"}
-											</span>
-										</div>
-
-										<Show when={!detection().installed}>
-											<div class="text-gray-500 dark:text-gray-400 pl-4">
-												copilot-api will be downloaded automatically on first
-												use via npx. This is a one-time process and requires
-												internet connection.
-											</div>
-										</Show>
-
-										<Show
-											when={detection().installed && detection().copilotBin}
-										>
-											<div class="text-gray-500 dark:text-gray-400 pl-4">
-												Path:{" "}
-												<code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">
-													{detection().copilotBin}
-												</code>
-											</div>
-										</Show>
-
-										<Show when={detection().npxBin}>
-											<div class="text-gray-500 dark:text-gray-400 pl-4">
-												npx available at{" "}
-												<code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">
-													{detection().npxBin}
-												</code>
-											</div>
-										</Show>
-
-										<Show when={!detection().nodeAvailable}>
-											<div class="mt-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded text-red-700 dark:text-red-400">
-												<p class="font-medium">Node.js not found</p>
-												<p class="mt-1">
-													Install Node.js from{" "}
-													<a
-														href="https://nodejs.org/"
-														target="_blank"
-														class="underline"
-														rel="noopener"
-													>
-														nodejs.org
-													</a>{" "}
-													or use a version manager (nvm, volta, fnm).
-												</p>
-												<Show when={detection().checkedNodePaths.length > 0}>
-													<details class="mt-2">
-														<summary class="cursor-pointer text-xs">
-															Checked paths
-														</summary>
-														<ul class="mt-1 pl-4 text-xs opacity-75">
-															<For each={detection().checkedNodePaths}>
-																{(p) => <li>{p}</li>}
-															</For>
-														</ul>
-													</details>
-												</Show>
-											</div>
-										</Show>
-									</div>
-								)}
-							</Show>
-						</div>
-					</div>
-
-					{/* Accounts */}
-					<div
-						class="space-y-4"
-						classList={{ hidden: activeTab() !== "providers" }}
-					>
-						<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
-							Connected Accounts
-						</h2>
-
-						<div class="p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
-							<div class="flex items-center justify-between">
-								<div>
-									<p class="text-sm font-medium text-gray-700 dark:text-gray-300">
-										{connectedCount()} of 4 providers connected
-									</p>
-									<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-										Manage your AI provider connections
-									</p>
-								</div>
-								<Button
-									variant="secondary"
-									size="sm"
-									onClick={() => setCurrentPage("dashboard")}
-								>
-									<svg
-										class="w-4 h-4 mr-1.5"
-										fill="none"
-										stroke="currentColor"
-										viewBox="0 0 24 24"
-									>
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											stroke-width="2"
-											d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
-										/>
-									</svg>
-									Manage
-								</Button>
-							</div>
-						</div>
-					</div>
-
-					{/* OAuth Model Mappings */}
-					<div
-						class="space-y-4"
-						classList={{ hidden: activeTab() !== "providers" }}
-					>
-						<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
-							OAuth Model Mappings
-						</h2>
-
-						<div class="p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
-							<Show
-								when={Object.keys(oauthModelsBySource()).length > 0}
-								fallback={
-									<p class="text-sm text-gray-500 dark:text-gray-400">
-										No OAuth-sourced models available. Connect an OAuth provider
-										to see models here.
-									</p>
-								}
-							>
-								<div class="space-y-4">
-									<For each={Object.entries(oauthModelsBySource())}>
-										{([source, modelIds]) => (
-											<div>
-												<p class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 flex items-center gap-2">
-													<span
-														class={`w-2 h-2 rounded-full ${source.includes("copilot")
-																? "bg-purple-500"
-																: source.includes("claude")
-																	? "bg-orange-500"
-																	: source.includes("gemini")
-																		? "bg-blue-500"
-																		: "bg-green-500"
-															}`}
-													/>
-													{source
-														.replace(/-/g, " ")
-														.replace(/\b\w/g, (c) => c.toUpperCase())}
-												</p>
-												<div class="flex flex-wrap gap-1.5">
-													<For each={modelIds}>
-														{(modelId) => (
-															<span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
-																{modelId}
-															</span>
-														)}
-													</For>
-												</div>
-											</div>
-										)}
-									</For>
-								</div>
-							</Show>
-							<p class="text-xs text-gray-400 dark:text-gray-500 mt-3">
-								These models are available through OAuth-authenticated accounts
-								and are automatically routed by ProxyPal.
-							</p>
-						</div>
-					</div>
-
-					{/* SSH Settings */}
-					<div class="space-y-4" classList={{ hidden: activeTab() !== "ssh" }}>
-						<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
-							SSH API Connections
-						</h2>
-						<p class="text-sm text-gray-500 dark:text-gray-400">
-							Securely tunnel your local API (port 8317) to a remote server for
-							shared access.
-						</p>
-
-						{/* List */}
-						<div class="space-y-3">
-							<For each={config().sshConfigs || []}>
-								{(ssh: SshConfig) => {
-									const statusProps = createMemo(() => {
-										const status = appStore.sshStatus()[ssh.id] || {
-											id: ssh.id,
-											status: ssh.enabled ? "connecting" : "disconnected",
-											message: undefined,
-										};
-
-										let displayStatus = status.status;
-										const displayMessage = status.message;
-
-										if (ssh.enabled) {
-											if (!displayStatus || displayStatus === "disconnected") {
-												displayStatus = "connecting";
-											}
-										} else {
-											if (
-												displayStatus === "connected" ||
-												displayStatus === "connecting"
-											) {
-												displayStatus = "disconnected";
-											}
-										}
-										return { status: displayStatus, message: displayMessage };
-									});
-
-									return (
-										<div class="p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-											<div>
-												<div class="font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
-													<span>
-														{ssh.username}@{ssh.host}:{ssh.port}
-													</span>
-												</div>
-												<div class="text-xs text-gray-500 mt-1">
-													Forward: Remote :{ssh.remotePort} &rarr; Local :
-													{ssh.localPort}
-												</div>
-												<Show when={statusProps().message}>
-													<div
-														class={`text-xs mt-1 break-all flex items-start gap-1 ${statusProps().status === "error"
-																? "text-red-500"
-																: "text-gray-500"
-															}`}
-													>
-														<span class="opacity-75">&gt;</span>
-														<span>{statusProps().message}</span>
-													</div>
-												</Show>
-											</div>
-											<div class="flex items-center gap-4">
-												<div class="flex items-center gap-2">
-													<div
-														class={`w-2.5 h-2.5 rounded-full ${statusProps().status === "connected"
-																? "bg-green-500"
-																: statusProps().status === "error"
-																	? "bg-red-500"
-																	: statusProps().status === "connecting" ||
-																		statusProps().status === "reconnecting"
-																		? "bg-orange-500 animate-pulse"
-																		: "bg-gray-400"
-															}`}
-													/>
-													<span class="text-sm font-medium text-gray-600 dark:text-gray-400 capitalize min-w-[50px]">
-														{statusProps().status}
-													</span>
-												</div>
-												<div class="h-6 w-px bg-gray-200 dark:bg-gray-700"></div>
-												<Switch
-													checked={ssh.enabled}
-													onChange={(val) => handleToggleSsh(ssh.id, val)}
-												/>
-												<button
-													class="p-2 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
-													title="Edit Connection"
-													onClick={() => handleEditSsh(ssh)}
-												>
-													<svg
-														xmlns="http://www.w3.org/2000/svg"
-														class="w-4 h-4"
-														fill="none"
-														viewBox="0 0 24 24"
-														stroke="currentColor"
-													>
-														<path
-															stroke-linecap="round"
-															stroke-linejoin="round"
-															stroke-width="2"
-															d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-														/>
-													</svg>
-												</button>
-												<button
-													class="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-													title="Delete Connection"
-													onClick={() => handleDeleteSsh(ssh.id)}
-												>
-													<svg
-														xmlns="http://www.w3.org/2000/svg"
-														class="w-4 h-4"
-														fill="none"
-														viewBox="0 0 24 24"
-														stroke="currentColor"
-													>
-														<path
-															stroke-linecap="round"
-															stroke-linejoin="round"
-															stroke-width="2"
-															d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-														/>
-													</svg>
-												</button>
-											</div>
-										</div>
-									);
-								}}
-							</For>
-							<Show when={(config().sshConfigs || []).length === 0}>
-								<div class="text-center py-8 text-gray-500 dark:text-gray-400 bg-gray-50/50 dark:bg-gray-800/30 rounded-xl border border-dashed border-gray-200 dark:border-gray-700">
-									No SSH connections configured
-								</div>
-							</Show>
-						</div>
-
-						{/* Add Form */}
-						<div class="p-5 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 space-y-4">
-							<div class="flex items-center justify-between">
-								<h3 class="font-medium text-gray-900 dark:text-gray-100">
-									{sshId() ? "Edit Connection" : "Add New Connection"}
-								</h3>
-								<Show when={sshId()}>
-									<button
-										onClick={handleCancelEdit}
-										class="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-									>
-										Cancel Edit
-									</button>
-								</Show>
-							</div>
-							<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-								<div class="space-y-1">
-									<label class="text-xs font-medium text-gray-500 uppercase">
-										Host / IP
-									</label>
-									<input
-										class="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-										placeholder="e.g. 192.168.1.1 or vps.example.com"
-										value={sshHost()}
-										onInput={(e) => setSshHost(e.currentTarget.value)}
-									/>
-								</div>
-								<div class="space-y-1">
-									<label class="text-xs font-medium text-gray-500 uppercase">
-										Port
-									</label>
-									<input
-										class="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-										placeholder="22"
-										type="number"
-										value={sshPort()}
-										onInput={(e) =>
-											setSshPort(parseInt(e.currentTarget.value) || 22)
-										}
-									/>
-								</div>
-								<div class="space-y-1">
-									<label class="text-xs font-medium text-gray-500 uppercase">
-										Username
-									</label>
-									<input
-										class="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-										placeholder="root"
-										value={sshUser()}
-										onInput={(e) => setSshUser(e.currentTarget.value)}
-									/>
-								</div>
-								<div class="space-y-1">
-									<label class="text-xs font-medium text-gray-500 uppercase">
-										Password (Not Supported)
-									</label>
-									<input
-										class="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-sm cursor-not-allowed"
-										placeholder="Password auth not supported - Use Key File"
-										type="password"
-										disabled
-										value={sshPass()}
-										onInput={(e) => setSshPass(e.currentTarget.value)}
-									/>
-									<p class="text-[10px] text-orange-500">
-										Note: Password authentication is not supported. Please use a
-										Private Key file.
-									</p>
-								</div>
-								<div class="col-span-1 sm:col-span-2 space-y-1">
-									<label class="text-xs font-medium text-gray-500 uppercase">
-										Private Key File
-									</label>
-									<div class="flex gap-2">
-										<input
-											class="flex-1 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-											placeholder="/path/to/private_key"
-											value={sshKey()}
-											onInput={(e) => setSshKey(e.currentTarget.value)}
-										/>
-										<button
-											class="px-3 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-sm font-medium rounded-lg transition-colors"
-											onClick={handlePickKeyFile}
-										>
-											Browse
-										</button>
-									</div>
-								</div>
-								<div class="space-y-1">
-									<label class="text-xs font-medium text-gray-500 uppercase">
-										Remote Port (VPS)
-									</label>
-									<input
-										class="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-										placeholder="8317"
-										type="number"
-										value={sshRemote()}
-										onInput={(e) =>
-											setSshRemote(parseInt(e.currentTarget.value) || 0)
-										}
-									/>
-									<p class="text-[10px] text-gray-400">
-										Port to open on the remote server
-									</p>
-								</div>
-								<div class="space-y-1">
-									<label class="text-xs font-medium text-gray-500 uppercase">
-										Local Port (This App)
-									</label>
-									<input
-										class="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-										placeholder="8317"
-										type="number"
-										value={sshLocal()}
-										onInput={(e) =>
-											setSshLocal(parseInt(e.currentTarget.value) || 0)
-										}
-									/>
-									<p class="text-[10px] text-gray-400">
-										Port running locally (default 8317)
-									</p>
-								</div>
-							</div>
-							<div class="pt-2">
-								<Button
-									onClick={handleSaveSsh}
-									loading={sshAdding()}
-									variant="primary"
-									class="w-full sm:w-auto"
-								>
-									{sshId() ? "Update Connection" : "Add Connection"}
-								</Button>
-							</div>
-						</div>
-					</div>
-
-					{/* Cloudflare Tunnel Settings */}
-					<div
-						class="space-y-6"
-						classList={{ hidden: activeTab() !== "cloudflare" }}
-					>
-						<div class="flex items-center justify-between">
-							<div>
-								<h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-									Cloudflare Tunnel
-								</h2>
-								<p class="text-sm text-gray-500 dark:text-gray-400">
-									Expose your local API via Cloudflare Tunnel
-								</p>
-							</div>
-							<Button
-								onClick={() => {
-									setCfId("");
-									setCfName("");
-									setCfToken("");
-									setCfLocalPort(8317);
-									setCfAdding(true);
-								}}
-								variant="primary"
-								class="text-sm"
-							>
-								+ Add Tunnel
-							</Button>
-						</div>
-
-						{/* Existing Tunnels */}
-						<For each={config().cloudflareConfigs || []}>
-							{(cf) => {
-								const status = () => appStore.cloudflareStatus()[cf.id];
-								return (
-									<div class="p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
-										<div class="flex items-center justify-between">
-											<div class="flex items-center gap-3">
-												<div
-													class={`w-3 h-3 rounded-full ${status()?.status === "connected"
-															? "bg-green-500"
-															: status()?.status === "connecting"
-																? "bg-yellow-500 animate-pulse"
-																: status()?.status === "error"
-																	? "bg-red-500"
-																	: "bg-gray-400"
-														}`}
-												/>
-												<div>
-													<p class="font-medium text-gray-900 dark:text-white">
-														{cf.name}
-													</p>
-													<p class="text-xs text-gray-500">
-														Port {cf.localPort} •{" "}
-														{status()?.message ||
-															(cf.enabled ? "Enabled" : "Disabled")}
-													</p>
-													<Show when={status()?.url}>
-														<p class="text-xs text-blue-500 mt-1">
-															{status()?.url}
-														</p>
-													</Show>
-												</div>
-											</div>
-											<div class="flex items-center gap-2">
-												<Switch
-													checked={cf.enabled}
-													onChange={(v) => handleToggleCf(cf.id, v)}
-												/>
-												<button
-													type="button"
-													onClick={() => handleEditCf(cf)}
-													class="p-2 text-gray-400 hover:text-blue-500 transition-colors"
-													title="Edit"
-												>
-													<svg
-														class="w-4 h-4"
-														fill="none"
-														viewBox="0 0 24 24"
-														stroke="currentColor"
-													>
-														<path
-															stroke-linecap="round"
-															stroke-linejoin="round"
-															stroke-width="2"
-															d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-														/>
-													</svg>
-												</button>
-												<button
-													type="button"
-													onClick={() => handleDeleteCf(cf.id)}
-													class="p-2 text-gray-400 hover:text-red-500 transition-colors"
-													title="Delete"
-												>
-													<svg
-														class="w-4 h-4"
-														fill="none"
-														viewBox="0 0 24 24"
-														stroke="currentColor"
-													>
-														<path
-															stroke-linecap="round"
-															stroke-linejoin="round"
-															stroke-width="2"
-															d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-														/>
-													</svg>
-												</button>
-											</div>
-										</div>
-									</div>
-								);
-							}}
-						</For>
-
-						{/* Add/Edit Form */}
-						<Show when={cfAdding()}>
-							<div class="p-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 space-y-4">
-								<div class="flex items-center justify-between">
-									<h3 class="font-medium text-blue-900 dark:text-blue-100">
-										{cfId() ? "Edit Tunnel" : "New Tunnel"}
-									</h3>
-									<button
-										type="button"
-										onClick={() => setCfAdding(false)}
-										class="text-gray-400 hover:text-gray-600"
-									>
-										<svg
-											class="w-5 h-5"
-											fill="none"
-											viewBox="0 0 24 24"
-											stroke="currentColor"
-										>
-											<path
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												stroke-width="2"
-												d="M6 18L18 6M6 6l12 12"
-											/>
-										</svg>
-									</button>
-								</div>
-								<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-									<div class="space-y-1">
-										<label class="text-xs font-medium text-gray-500 uppercase">
-											Name
-										</label>
-										<input
-											class="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-											placeholder="My Tunnel"
-											value={cfName()}
-											onInput={(e) => setCfName(e.currentTarget.value)}
-										/>
-									</div>
-									<div class="space-y-1">
-										<label class="text-xs font-medium text-gray-500 uppercase">
-											Local Port (Reference)
-										</label>
-										<input
-											class="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-											placeholder="8317"
-											type="number"
-											value={cfLocalPort()}
-											onInput={(e) =>
-												setCfLocalPort(parseInt(e.currentTarget.value) || 8317)
-											}
-										/>
-										<p class="text-[10px] text-gray-400">
-											Configure actual port in Cloudflare dashboard
-										</p>
-									</div>
-								</div>
-								<div class="space-y-1">
-									<label class="text-xs font-medium text-gray-500 uppercase">
-										Tunnel Token
-									</label>
-									<input
-										class="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none"
-										placeholder="eyJ..."
-										type="password"
-										value={cfToken()}
-										onInput={(e) => setCfToken(e.currentTarget.value)}
-									/>
-									<p class="text-[10px] text-gray-400">
-										Get token from Cloudflare Zero Trust Dashboard → Access →
-										Tunnels
-									</p>
-								</div>
-								<div class="pt-2">
-									<Button
-										onClick={handleSaveCf}
-										variant="primary"
-										class="w-full sm:w-auto"
-									>
-										{cfId() ? "Update Tunnel" : "Add Tunnel"}
-									</Button>
-								</div>
-							</div>
-						</Show>
-
-						{/* Help Section */}
-						<div class="p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
-							<h3 class="font-medium text-gray-900 dark:text-white mb-2">
-								How to set up Cloudflare Tunnel
-							</h3>
-							<ol class="text-sm text-gray-600 dark:text-gray-400 space-y-2 list-decimal list-inside">
-								<li>
-									Install{" "}
-									<code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">
-										cloudflared
-									</code>{" "}
-									on your system
-								</li>
-								<li>
-									Go to{" "}
-									<a
-										href="https://one.dash.cloudflare.com/"
-										target="_blank"
-										rel="noopener noreferrer"
-										class="text-blue-500 hover:underline"
-									>
-										Cloudflare Zero Trust Dashboard
-									</a>{" "}
-									→ Networks → Tunnels
-								</li>
-								<li>Create a new tunnel and copy the token</li>
-								<li>
-									<strong class="text-gray-900 dark:text-white">
-										Important:
-									</strong>{" "}
-									Configure a <strong>Public Hostname</strong> in the tunnel
-									settings:
-									<ul class="list-disc list-inside ml-4 mt-1 space-y-1">
-										<li>
-											Subdomain: your choice (e.g.,{" "}
-											<code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">
-												proxy
-											</code>
-											)
-										</li>
-										<li>Domain: select your domain</li>
-										<li>
-											Service Type:{" "}
-											<code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">
-												HTTP
-											</code>
-										</li>
-										<li>
-											URL:{" "}
-											<code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">
-												localhost:8317
-											</code>{" "}
-											(or your proxy port)
-										</li>
-									</ul>
-								</li>
-								<li>Paste the token above and enable the tunnel</li>
-							</ol>
-							<p class="mt-3 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 rounded-lg">
-								<strong>Note:</strong> The port routing is configured in the
-								Cloudflare dashboard, not in ProxyPal. The "Local Port" field
-								above is for reference only.
-							</p>
-						</div>
-					</div>
-
-					{/* Raw YAML Config Editor (Power Users) */}
-					<Show when={appStore.proxyStatus().running}>
-						<div
-							class="space-y-4"
-							classList={{ hidden: activeTab() !== "advanced" }}
-						>
-							<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
-								Raw Configuration
-							</h2>
-
-							<div class="p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
-								<button
-									type="button"
-									onClick={() => setYamlConfigExpanded(!yamlConfigExpanded())}
-									class="w-full flex items-center justify-between text-left"
-								>
-									<div>
-										<p class="text-sm font-medium text-gray-700 dark:text-gray-300">
-											YAML Config Editor
-										</p>
-										<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-											Advanced: Edit the raw CLIProxyAPI configuration
-										</p>
-									</div>
-									<svg
-										class={`w-5 h-5 text-gray-400 transition-transform ${yamlConfigExpanded() ? "rotate-180" : ""}`}
-										fill="none"
-										stroke="currentColor"
-										viewBox="0 0 24 24"
-									>
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											stroke-width="2"
-											d="M19 9l-7 7-7-7"
-										/>
-									</svg>
-								</button>
-
-								<Show when={yamlConfigExpanded()}>
-									<div class="mt-4 space-y-3">
-										<div class="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 rounded-lg">
+								{/* Update available */}
+								<Show when={coreUpdateInfo()?.updateAvailable}>
+									<div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+										<div class="flex items-start gap-3 p-3 bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 rounded-lg">
 											<svg
-												class="w-4 h-4 shrink-0"
+												class="w-5 h-5 text-brand-500 mt-0.5 shrink-0"
 												fill="none"
-												viewBox="0 0 24 24"
 												stroke="currentColor"
+												viewBox="0 0 24 24"
 											>
 												<path
 													stroke-linecap="round"
 													stroke-linejoin="round"
 													stroke-width="2"
-													d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+													d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"
 												/>
 											</svg>
-											<span>
-												Be careful! Invalid YAML can break the proxy. Changes
-												apply immediately but some may require a restart.
-											</span>
-										</div>
-
-										<Show when={loadingYaml()}>
-											<div class="text-center py-8 text-gray-500">
-												Loading configuration...
-											</div>
-										</Show>
-
-										<Show when={!loadingYaml()}>
-											<textarea
-												value={yamlContent()}
-												onInput={(e) => setYamlContent(e.currentTarget.value)}
-												class="w-full h-96 px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-mono focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth resize-y"
-												placeholder="Loading..."
-												spellcheck={false}
-											/>
-
-											<div class="flex items-center justify-between">
-												<Button
-													variant="secondary"
-													size="sm"
-													onClick={loadYamlConfig}
-													disabled={loadingYaml()}
-												>
-													<svg
-														class="w-4 h-4 mr-1.5"
-														fill="none"
-														stroke="currentColor"
-														viewBox="0 0 24 24"
-													>
-														<path
-															stroke-linecap="round"
-															stroke-linejoin="round"
-															stroke-width="2"
-															d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-														/>
-													</svg>
-													Reload
-												</Button>
-
-												<Button
-													variant="primary"
-													size="sm"
-													onClick={saveYamlConfig}
-													disabled={savingYaml() || loadingYaml()}
-												>
-													<Show
-														when={savingYaml()}
-														fallback={<span>Save Changes</span>}
-													>
-														<svg
-															class="w-4 h-4 animate-spin mr-1.5"
-															fill="none"
-															viewBox="0 0 24 24"
-														>
-															<circle
-																class="opacity-25"
-																cx="12"
-																cy="12"
-																r="10"
-																stroke="currentColor"
-																stroke-width="4"
-															/>
-															<path
-																class="opacity-75"
-																fill="currentColor"
-																d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-															/>
-														</svg>
-														Saving...
-													</Show>
-												</Button>
-											</div>
-										</Show>
-									</div>
-								</Show>
-							</div>
-						</div>
-					</Show>
-
-					{/* App Updates */}
-					<div
-						class="space-y-4"
-						classList={{ hidden: activeTab() !== "advanced" }}
-					>
-						<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
-							App Updates
-						</h2>
-
-						<div class="space-y-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
-							<div class="flex items-center justify-between">
-								<div class="flex-1">
-									<p class="text-sm font-medium text-gray-700 dark:text-gray-300">
-										Check for Updates
-									</p>
-									<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-										Download and install new versions automatically
-									</p>
-								</div>
-								<Button
-									variant="secondary"
-									size="sm"
-									onClick={handleCheckForUpdates}
-									disabled={checkingForUpdates() || installingUpdate()}
-								>
-									<Show
-										when={checkingForUpdates()}
-										fallback={
-											<>
-												<svg
-													class="w-4 h-4 mr-1.5"
-													fill="none"
-													stroke="currentColor"
-													viewBox="0 0 24 24"
-												>
-													<path
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														stroke-width="2"
-														d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-													/>
-												</svg>
-												Check
-											</>
-										}
-									>
-										<svg
-											class="w-4 h-4 animate-spin mr-1.5"
-											fill="none"
-											viewBox="0 0 24 24"
-										>
-											<circle
-												class="opacity-25"
-												cx="12"
-												cy="12"
-												r="10"
-												stroke="currentColor"
-												stroke-width="4"
-											/>
-											<path
-												class="opacity-75"
-												fill="currentColor"
-												d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-											/>
-										</svg>
-										Checking...
-									</Show>
-								</Button>
-							</div>
-
-							{/* Update available */}
-							<Show when={updateInfo()?.available}>
-								<div class="border-t border-gray-200 dark:border-gray-700 pt-4">
-									<div class="flex items-start gap-3 p-3 bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 rounded-lg">
-										<svg
-											class="w-5 h-5 text-brand-500 mt-0.5 shrink-0"
-											fill="none"
-											stroke="currentColor"
-											viewBox="0 0 24 24"
-										>
-											<path
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												stroke-width="2"
-												d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"
-											/>
-										</svg>
-										<div class="flex-1 min-w-0">
-											<p class="text-sm font-medium text-brand-700 dark:text-brand-300">
-												Update Available: v{updateInfo()?.version}
-											</p>
-											<p class="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
-												<svg
-													class="w-3.5 h-3.5"
-													fill="none"
-													stroke="currentColor"
-													viewBox="0 0 24 24"
-												>
-													<path
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														stroke-width="2"
-														d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-													/>
-												</svg>
-												Please stop the proxy before updating to avoid issues
-											</p>
-											<Show when={updateInfo()?.body}>
-												<p class="text-xs text-brand-600 dark:text-brand-400 mt-1 line-clamp-3">
-													{updateInfo()?.body}
+											<div class="flex-1 min-w-0">
+												<p class="text-sm font-medium text-brand-700 dark:text-brand-300">
+													Core Update Available: v{coreUpdateInfo()?.latestVersion}
 												</p>
-											</Show>
-											<Show when={updateInfo()?.date}>
-												<p class="text-xs text-brand-500 dark:text-brand-500 mt-1">
-													Released: {updateInfo()?.date}
-												</p>
-											</Show>
-										</div>
-									</div>
-
-									{/* Install button */}
-									<div class="mt-3">
-										<Show
-											when={updaterSupport()?.supported !== false}
-											fallback={
-												<div class="text-center">
-													<p class="text-xs text-amber-600 dark:text-amber-400 mb-2">
-														{updaterSupport()?.reason}
-													</p>
-													<a
-														href="https://github.com/heyhuynhgiabuu/proxypal/releases"
-														target="_blank"
-														rel="noopener noreferrer"
-														class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-brand-500 hover:bg-brand-600 rounded-lg transition-colors"
-													>
+												<Show when={appStore.proxyStatus().running}>
+													<p class="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
 														<svg
-															class="w-4 h-4 mr-1.5"
+															class="w-3.5 h-3.5"
 															fill="none"
 															stroke="currentColor"
 															viewBox="0 0 24 24"
@@ -5048,23 +1781,37 @@ export function SettingsPage() {
 																stroke-linecap="round"
 																stroke-linejoin="round"
 																stroke-width="2"
-																d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+																d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
 															/>
 														</svg>
-														Download from GitHub
-													</a>
-												</div>
-											}
-										>
+														The proxy will be stopped to install the update
+													</p>
+												</Show>
+												<Show when={coreUpdateInfo()?.releaseNotes}>
+													<details class="mt-2">
+														<summary class="cursor-pointer text-xs text-brand-600 dark:text-brand-400">
+															Release notes
+														</summary>
+														<p class="text-xs text-brand-600 dark:text-brand-400 mt-1 whitespace-pre-wrap">
+															{coreUpdateInfo()?.releaseNotes?.slice(0, 500)}
+															{(coreUpdateInfo()?.releaseNotes?.length || 0) > 500 && "..."}
+														</p>
+													</details>
+												</Show>
+											</div>
+										</div>
+
+										{/* Install button */}
+										<div class="mt-3">
 											<Button
 												variant="primary"
 												size="sm"
-												onClick={handleInstallUpdate}
-												disabled={installingUpdate()}
+												onClick={handleInstallCoreUpdate}
+												disabled={installingCoreUpdate()}
 												class="w-full"
 											>
 												<Show
-													when={installingUpdate()}
+													when={installingCoreUpdate()}
 													fallback={
 														<>
 															<svg
@@ -5103,118 +1850,1891 @@ export function SettingsPage() {
 															d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
 														/>
 													</svg>
-													{updateProgress()?.event === "Progress"
-														? "Downloading..."
-														: "Installing..."}
+													Installing...
 												</Show>
 											</Button>
-										</Show>
+										</div>
+									</div>
+								</Show>
+
+								{/* Already up to date */}
+								<Show when={coreUpdateInfo() && !coreUpdateInfo()?.updateAvailable}>
+									<div class="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+										<svg
+											class="w-5 h-5 text-green-500"
+											fill="none"
+											stroke="currentColor"
+											viewBox="0 0 24 24"
+										>
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												stroke-width="2"
+												d="M5 13l4 4L19 7"
+											/>
+										</svg>
+										<p class="text-sm text-green-700 dark:text-green-300">
+											Core is up to date (v{coreUpdateInfo()?.currentVersion})
+										</p>
+									</div>
+								</Show>
+							</div>
+						</div>
+
+						{/* Proxy settings */}
+						<div
+							class="space-y-4"
+							classList={{ hidden: activeTab() !== "general" }}
+						>
+							<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+								Proxy Configuration
+							</h2>
+
+							<div class="space-y-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+								<label class="block">
+									<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+										Port
+									</span>
+									<input
+										type="number"
+										value={config().port}
+										onInput={(e) =>
+											handleConfigChange(
+												"port",
+												parseInt(e.currentTarget.value) || 8317,
+											)
+										}
+										class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth"
+										min="1024"
+										max="65535"
+									/>
+									<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+										The port where the proxy server will listen (default: 8317)
+									</p>
+								</label>
+
+								<div class="border-t border-gray-200 dark:border-gray-700" />
+
+								<label class="block">
+									<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+										Upstream Proxy URL
+									</span>
+									<input
+										type="text"
+										value={config().proxyUrl}
+										onInput={(e) =>
+											handleConfigChange("proxyUrl", e.currentTarget.value)
+										}
+										placeholder="socks5://127.0.0.1:1080"
+										class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth"
+									/>
+									<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+										Optional SOCKS5/HTTP proxy for outbound requests (e.g.
+										socks5://host:port)
+									</p>
+								</label>
+
+								<div class="border-t border-gray-200 dark:border-gray-700" />
+
+								<label class="block">
+									<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+										Proxy API Key
+									</span>
+									<div class="relative mt-1">
+										<input
+											type={showProxyApiKey() ? "text" : "password"}
+											value={config().proxyApiKey || "proxypal-local"}
+											onInput={(e) =>
+												handleConfigChange(
+													"proxyApiKey",
+													e.currentTarget.value || "proxypal-local",
+												)
+											}
+											placeholder="proxypal-local"
+											class="block w-full px-3 py-2 pr-10 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-mono focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth"
+										/>
+										<button
+											type="button"
+											onClick={() => setShowProxyApiKey(!showProxyApiKey())}
+											class="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+										>
+											{showProxyApiKey() ? (
+												<svg
+													class="w-5 h-5"
+													fill="none"
+													viewBox="0 0 24 24"
+													stroke="currentColor"
+												>
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														stroke-width="2"
+														d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
+													/>
+												</svg>
+											) : (
+												<svg
+													class="w-5 h-5"
+													fill="none"
+													viewBox="0 0 24 24"
+													stroke="currentColor"
+												>
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														stroke-width="2"
+														d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+													/>
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														stroke-width="2"
+														d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+													/>
+												</svg>
+											)}
+										</button>
+									</div>
+									<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+										API key for client authentication. Change this if exposing
+										proxy publicly.
+									</p>
+								</label>
+
+								<div class="border-t border-gray-200 dark:border-gray-700" />
+
+								<label class="block">
+									<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+										Management API Key
+									</span>
+									<div class="relative mt-1">
+										<input
+											type={showManagementKey() ? "text" : "password"}
+											value={config().managementKey || "proxypal-mgmt-key"}
+											onInput={(e) =>
+												handleConfigChange(
+													"managementKey",
+													e.currentTarget.value || "proxypal-mgmt-key",
+												)
+											}
+											placeholder="proxypal-mgmt-key"
+											class="block w-full px-3 py-2 pr-10 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-mono focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth"
+										/>
+										<button
+											type="button"
+											onClick={() => setShowManagementKey(!showManagementKey())}
+											class="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+										>
+											{showManagementKey() ? (
+												<svg
+													class="w-5 h-5"
+													fill="none"
+													viewBox="0 0 24 24"
+													stroke="currentColor"
+												>
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														stroke-width="2"
+														d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
+													/>
+												</svg>
+											) : (
+												<svg
+													class="w-5 h-5"
+													fill="none"
+													viewBox="0 0 24 24"
+													stroke="currentColor"
+												>
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														stroke-width="2"
+														d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+													/>
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														stroke-width="2"
+														d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+													/>
+												</svg>
+											)}
+										</button>
+									</div>
+									<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+										Secret key for internal management API. Change this if
+										exposing proxy publicly.
+									</p>
+									<p class="mt-1 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-2 py-1 rounded">
+										⚠️ Changing this key requires a proxy restart to take effect.
+									</p>
+								</label>
+
+								<div class="border-t border-gray-200 dark:border-gray-700" />
+
+								<label class="block">
+									<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+										Request Retry Count
+									</span>
+									<input
+										type="number"
+										value={config().requestRetry}
+										onInput={(e) =>
+											handleConfigChange(
+												"requestRetry",
+												Math.max(
+													0,
+													Math.min(10, parseInt(e.currentTarget.value) || 0),
+												),
+											)
+										}
+										class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth"
+										min="0"
+										max="10"
+									/>
+									<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+										Number of retries on 403, 408, 500, 502, 503, 504 errors
+										(0-10)
+									</p>
+								</label>
+
+								<div class="border-t border-gray-200 dark:border-gray-700" />
+
+								<label class="block">
+									<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+										Routing Strategy
+									</span>
+									<select
+										value={config().routingStrategy}
+										onChange={(e) =>
+											handleConfigChange("routingStrategy", e.currentTarget.value)
+										}
+										class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth [&>option]:bg-white [&>option]:dark:bg-gray-900 [&>option]:text-gray-900 [&>option]:dark:text-gray-100"
+									>
+										<option value="round-robin">
+											Round Robin (even distribution)
+										</option>
+										<option value="fill-first">
+											Fill First (use first account until limit)
+										</option>
+										<option value="sequential">Sequential (ordered)</option>
+									</select>
+									<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+										How auth accounts are selected for requests
+									</p>
+								</label>
+
+								<Show when={appStore.proxyStatus().running}>
+									<div class="border-t border-gray-200 dark:border-gray-700" />
+
+									<label class="block">
+										<span class="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
+											Max Retry Interval (seconds)
+											<Show when={savingMaxRetryInterval()}>
+												<svg
+													class="w-4 h-4 animate-spin text-brand-500"
+													fill="none"
+													viewBox="0 0 24 24"
+												>
+													<circle
+														class="opacity-25"
+														cx="12"
+														cy="12"
+														r="10"
+														stroke="currentColor"
+														stroke-width="4"
+													/>
+													<path
+														class="opacity-75"
+														fill="currentColor"
+														d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+													/>
+												</svg>
+											</Show>
+										</span>
+										<input
+											type="number"
+											value={maxRetryInterval()}
+											onInput={(e) => {
+												const val = Math.max(
+													0,
+													parseInt(e.currentTarget.value) || 0,
+												);
+												handleMaxRetryIntervalChange(val);
+											}}
+											disabled={savingMaxRetryInterval()}
+											class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth disabled:opacity-50"
+											min="0"
+										/>
+										<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+											Maximum wait time between retries in seconds (0 = no limit).
+											Updates live without restart.
+										</p>
+									</label>
+
+									<label class="block">
+										<span class="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
+											Log Buffer Size
+											<Show when={savingLogSize()}>
+												<svg
+													class="w-4 h-4 animate-spin text-brand-500"
+													fill="none"
+													viewBox="0 0 24 24"
+												>
+													<circle
+														class="opacity-25"
+														cx="12"
+														cy="12"
+														r="10"
+														stroke="currentColor"
+														stroke-width="4"
+													/>
+													<path
+														class="opacity-75"
+														fill="currentColor"
+														d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+													/>
+												</svg>
+											</Show>
+										</span>
+										<input
+											type="number"
+											value={logSize()}
+											onInput={(e) => {
+												const val = Math.max(
+													100,
+													parseInt(e.currentTarget.value) || 500,
+												);
+												handleLogSizeChange(val);
+											}}
+											disabled={savingLogSize()}
+											class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth disabled:opacity-50"
+											min="100"
+										/>
+										<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+											Number of log entries to retain in memory. Higher values use
+											more memory but preserve older logs.
+										</p>
+									</label>
+								</Show>
+							</div>
+						</div>
+
+						{/* Thinking Budget Settings */}
+						<div
+							class="space-y-4"
+							classList={{ hidden: activeTab() !== "general" }}
+						>
+							<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+								Thinking Budget (Antigravity Claude Models)
+							</h2>
+
+							<div class="space-y-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+								<p class="text-xs text-gray-500 dark:text-gray-400">
+									Configure the thinking/reasoning token budget for Antigravity
+									Claude models (claude-sonnet-4-5-thinking,
+									claude-opus-4-5-thinking). This applies to both OpenCode and
+									AmpCode CLI agents.
+								</p>
+
+								<div class="space-y-3">
+									<label class="block">
+										<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+											Budget Level
+										</span>
+										<select
+											value={thinkingBudgetMode()}
+											onChange={(e) =>
+												setThinkingBudgetMode(
+													e.currentTarget.value as ThinkingBudgetSettings["mode"],
+												)
+											}
+											class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth [&>option]:bg-white [&>option]:dark:bg-gray-900 [&>option]:text-gray-900 [&>option]:dark:text-gray-100"
+										>
+											<option value="low">Low (2,048 tokens)</option>
+											<option value="medium">Medium (8,192 tokens)</option>
+											<option value="high">High (32,768 tokens)</option>
+											<option value="custom">Custom</option>
+										</select>
+									</label>
+
+									<Show when={thinkingBudgetMode() === "custom"}>
+										<label class="block">
+											<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+												Custom Token Budget
+											</span>
+											<input
+												type="number"
+												value={thinkingBudgetCustom()}
+												onInput={(e) =>
+													setThinkingBudgetCustom(
+														Math.max(
+															1024,
+															Math.min(
+																200000,
+																parseInt(e.currentTarget.value) || 16000,
+															),
+														),
+													)
+												}
+												class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth"
+												min="1024"
+												max="200000"
+											/>
+											<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+												Range: 1,024 - 200,000 tokens
+											</p>
+										</label>
+									</Show>
+
+									<div class="flex items-center justify-between pt-2">
+										<span class="text-sm text-gray-600 dark:text-gray-400">
+											Current:{" "}
+											<span class="font-medium text-brand-600 dark:text-brand-400">
+												{getThinkingBudgetTokens({
+													mode: thinkingBudgetMode(),
+													customBudget: thinkingBudgetCustom(),
+												}).toLocaleString()}{" "}
+												tokens
+											</span>
+										</span>
+										<Button
+											variant="primary"
+											size="sm"
+											onClick={saveThinkingBudget}
+											disabled={savingThinkingBudget()}
+										>
+											{savingThinkingBudget() ? "Saving..." : "Apply"}
+										</Button>
 									</div>
 
-									{/* Progress indicator */}
-									<Show when={updateProgress()?.event === "Progress"}>
-										<div class="mt-2">
-											<div class="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-												<div
-													class="h-full bg-brand-500 transition-all duration-300"
-													style={{
-														width: `${(updateProgress()?.contentLength ?? 0) > 0 ? ((updateProgress()?.chunkLength ?? 0) / (updateProgress()?.contentLength ?? 1)) * 100 : 0}%`,
-													}}
-												/>
-											</div>
+									{/* Gemini Thinking Injection Toggle */}
+									<div class="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-700">
+										<div class="flex-1">
+											<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+												Gemini Thinking Config Injection
+											</span>
+											<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+												When enabled, ProxyPal injects thinking config for Gemini
+												3 models. Disable if you want to control thinking_config
+												in your requests.
+											</p>
 										</div>
-									</Show>
-								</div>
-							</Show>
-
-							{/* Already up to date */}
-							<Show when={updateInfo() && !updateInfo()?.available}>
-								<div class="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
-									<svg
-										class="w-5 h-5 text-green-500"
-										fill="none"
-										stroke="currentColor"
-										viewBox="0 0 24 24"
-									>
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											stroke-width="2"
-											d="M5 13l4 4L19 7"
+										<Switch
+											checked={geminiThinkingInjection()}
+											onChange={(checked) => saveGeminiThinkingInjection(checked)}
+											disabled={savingGeminiThinking()}
 										/>
-									</svg>
-									<p class="text-sm text-green-700 dark:text-green-300">
-										You're running the latest version (v
-										{updateInfo()?.currentVersion})
+									</div>
+								</div>
+							</div>
+						</div>
+
+						{/* Reasoning Effort (GPT/Codex Models) */}
+						<div
+							class="space-y-4"
+							classList={{ hidden: activeTab() !== "general" }}
+						>
+							<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+								Reasoning Effort (GPT/Codex Models)
+							</h2>
+
+							<div class="space-y-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+								<p class="text-xs text-gray-500 dark:text-gray-400">
+									Configure default reasoning effort for GPT-5.x models. This
+									setting is applied when configuring CLI agents (OpenCode,
+									Factory Droid, etc.) and can be overridden per-request using
+									model suffix like{" "}
+									<code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">
+										gpt-5(high)
+									</code>
+									.
+								</p>
+
+								<div class="space-y-3">
+									<label class="block">
+										<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+											Default Effort Level
+										</span>
+										<select
+											value={reasoningEffortLevel()}
+											onChange={(e) =>
+												setReasoningEffortLevel(
+													e.currentTarget.value as ReasoningEffortLevel,
+												)
+											}
+											class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth [&>option]:bg-white [&>option]:dark:bg-gray-900 [&>option]:text-gray-900 [&>option]:dark:text-gray-100"
+										>
+											<option value="none">None (disabled)</option>
+											<option value="low">Low (~1,024 tokens)</option>
+											<option value="medium">Medium (~8,192 tokens)</option>
+											<option value="high">High (~24,576 tokens)</option>
+											<option value="xhigh">Extra High (~32,768 tokens)</option>
+										</select>
+									</label>
+
+									<div class="flex items-center justify-between pt-2">
+										<span class="text-sm text-gray-600 dark:text-gray-400">
+											Current:{" "}
+											<span class="font-medium text-brand-600 dark:text-brand-400">
+												{reasoningEffortLevel()}
+											</span>
+										</span>
+										<Button
+											variant="primary"
+											size="sm"
+											onClick={saveReasoningEffort}
+											disabled={savingReasoningEffort()}
+										>
+											{savingReasoningEffort() ? "Saving..." : "Apply"}
+										</Button>
+									</div>
+
+									<p class="text-xs text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700 pt-3 mt-3">
+										<span class="font-medium">Per-request override:</span> Use
+										model suffix like{" "}
+										<code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">
+											gpt-5(high)
+										</code>{" "}
+										or{" "}
+										<code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">
+											gpt-5.2(low)
+										</code>
 									</p>
 								</div>
-							</Show>
+							</div>
 						</div>
-					</div>
 
-					<div class="border-t border-gray-200 dark:border-gray-700 my-6" />
+						{/* Claude Code Settings */}
+						<div
+							class="space-y-4"
+							classList={{ hidden: activeTab() !== "general" }}
+						>
+							<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+								Claude Code Settings
+							</h2>
 
-					{/* Custom OpenAI-Compatible Providers */}
-					<div
-						class="space-y-4"
-						classList={{ hidden: activeTab() !== "models" }}
-					>
-						<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
-							Available Models
-						</h2>
-						<ModelsWidget
-							models={models()}
-							loading={!appStore.proxyStatus().running}
-						/>
-					</div>
+							<div class="space-y-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+								<p class="text-xs text-gray-500 dark:text-gray-400">
+									Map Claude Code model slots to available provider models. These
+									settings modify the claude_desktop_config.json file.
+								</p>
 
-					{/* CLI Agents */}
-					<div
-						class="space-y-4"
-						classList={{ hidden: activeTab() !== "models" }}
-					>
-						<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
-							CLI Agents
-						</h2>
-						<div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 divide-y divide-gray-100 dark:divide-gray-700">
-							<For each={agents()}>
-								{(agent) => (
-									<div class="p-3 flex items-center justify-between">
-										<div class="flex items-center gap-3">
-											<Show when={agent.logo}>
-												<img
-													src={agent.logo}
-													alt={agent.name}
-													class="w-6 h-6 rounded"
+								<div class="space-y-3">
+									{(() => {
+										const { customModels, builtInModels } =
+											getAvailableTargetModels();
+										const hasModels =
+											customModels.length > 0 ||
+											builtInModels.anthropic.length > 0 ||
+											builtInModels.google.length > 0 ||
+											builtInModels.openai.length > 0 ||
+											builtInModels.copilot.length > 0;
+
+										if (!hasModels) {
+											return (
+												<p class="text-sm text-gray-500 dark:text-gray-400 italic">
+													No models available. Please authenticate with a provider
+													first.
+												</p>
+											);
+										}
+
+										const ModelSelect = (props: {
+											label: string;
+											value: string | null;
+											modelType: "haikuModel" | "opusModel" | "sonnetModel";
+										}) => (
+											<label class="block">
+												<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+													{props.label}
+												</span>
+												<select
+													value={props.value || ""}
+													onChange={(e) =>
+														handleClaudeCodeSettingChange(
+															props.modelType,
+															e.currentTarget.value,
+														)
+													}
+													class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth [&>option]:bg-white [&>option]:dark:bg-gray-900 [&>option]:text-gray-900 [&>option]:dark:text-gray-100 [&>optgroup]:bg-white [&>optgroup]:dark:bg-gray-900 [&>optgroup]:text-gray-900 [&>optgroup]:dark:text-gray-100"
+												>
+													<option value="">Select model...</option>
+													<Show when={customModels.length > 0}>
+														<optgroup label="Custom Providers">
+															<For each={customModels}>
+																{(model) => (
+																	<option value={model.value}>
+																		{model.label}
+																	</option>
+																)}
+															</For>
+														</optgroup>
+													</Show>
+													<Show when={builtInModels.anthropic.length > 0}>
+														<optgroup label="Anthropic">
+															<For each={builtInModels.anthropic}>
+																{(model) => (
+																	<option value={model.value}>
+																		{model.label}
+																	</option>
+																)}
+															</For>
+														</optgroup>
+													</Show>
+													<Show when={builtInModels.google.length > 0}>
+														<optgroup label="Google">
+															<For each={builtInModels.google}>
+																{(model) => (
+																	<option value={model.value}>
+																		{model.label}
+																	</option>
+																)}
+															</For>
+														</optgroup>
+													</Show>
+													<Show when={builtInModels.openai.length > 0}>
+														<optgroup label="OpenAI">
+															<For each={builtInModels.openai}>
+																{(model) => (
+																	<option value={model.value}>
+																		{model.label}
+																	</option>
+																)}
+															</For>
+														</optgroup>
+													</Show>
+													<Show when={builtInModels.copilot.length > 0}>
+														<optgroup label="GitHub Copilot">
+															<For each={builtInModels.copilot}>
+																{(model) => (
+																	<option value={model.value}>
+																		{model.label}
+																	</option>
+																)}
+															</For>
+														</optgroup>
+													</Show>
+													<Show when={builtInModels.qwen.length > 0}>
+														<optgroup label="Qwen">
+															<For each={builtInModels.qwen}>
+																{(model) => (
+																	<option value={model.value}>
+																		{model.label}
+																	</option>
+																)}
+															</For>
+														</optgroup>
+													</Show>
+													<Show when={builtInModels.iflow.length > 0}>
+														<optgroup label="iFlow">
+															<For each={builtInModels.iflow}>
+																{(model) => (
+																	<option value={model.value}>
+																		{model.label}
+																	</option>
+																)}
+															</For>
+														</optgroup>
+													</Show>
+												</select>
+											</label>
+										);
+
+										return (
+											<>
+												<ModelSelect
+													label="Haiku Model"
+													value={claudeCodeSettings().haikuModel}
+													modelType="haikuModel"
 												/>
-											</Show>
-											<div>
+												<ModelSelect
+													label="Sonnet Model"
+													value={claudeCodeSettings().sonnetModel}
+													modelType="sonnetModel"
+												/>
+												<ModelSelect
+													label="Opus Model"
+													value={claudeCodeSettings().opusModel}
+													modelType="opusModel"
+												/>
+											</>
+										);
+									})()}
+								</div>
+							</div>
+						</div>
+
+						{/* Amp CLI Integration */}
+						<div
+							class="space-y-4"
+							classList={{ hidden: activeTab() !== "general" }}
+						>
+							<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+								Amp CLI Integration
+							</h2>
+
+							<div class="space-y-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+								<label class="block">
+									<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+										Amp API Key
+									</span>
+									<input
+										type="password"
+										value={config().ampApiKey || ""}
+										onInput={(e) =>
+											handleConfigChange("ampApiKey", e.currentTarget.value)
+										}
+										placeholder="amp_..."
+										class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth font-mono"
+									/>
+									<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+										Get your API key from{" "}
+										<a
+											href="https://ampcode.com/settings"
+											target="_blank"
+											rel="noopener noreferrer"
+											class="text-brand-500 hover:text-brand-600 underline"
+										>
+											ampcode.com/settings
+										</a>
+										. Required for Amp CLI to authenticate through the proxy.
+									</p>
+								</label>
+
+								<div class="border-t border-gray-200 dark:border-gray-700" />
+
+								{/* Model Mappings */}
+								<div class="space-y-3">
+									<div>
+										<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+											Model Mappings
+										</span>
+										<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+											Route Amp model requests to different providers
+										</p>
+									</div>
+
+									{/* Prioritize Model Mappings Toggle */}
+									<Show when={appStore.proxyStatus().running}>
+										<div class="flex items-center justify-between p-3 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700">
+											<div class="flex-1">
 												<div class="flex items-center gap-2">
-													<span class="font-medium text-sm text-gray-900 dark:text-gray-100">
-														{agent.name}
+													<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+														Prioritize Model Mappings
 													</span>
-													<Show when={agent.configured}>
-														<span class="px-1.5 py-0.5 text-[10px] font-medium bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-300 rounded">
-															Configured
-														</span>
+													<Show when={savingForceModelMappings()}>
+														<svg
+															class="w-4 h-4 animate-spin text-brand-500"
+															fill="none"
+															viewBox="0 0 24 24"
+														>
+															<circle
+																class="opacity-25"
+																cx="12"
+																cy="12"
+																r="10"
+																stroke="currentColor"
+																stroke-width="4"
+															/>
+															<path
+																class="opacity-75"
+																fill="currentColor"
+																d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+															/>
+														</svg>
 													</Show>
 												</div>
-												<p class="text-xs text-gray-500 dark:text-gray-400">
-													{agent.description}
+												<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+													Model mappings take precedence over local API keys.
+													Enable to route mapped models via OAuth instead of local
+													keys.
 												</p>
 											</div>
+											<button
+												type="button"
+												role="switch"
+												aria-checked={forceModelMappings()}
+												disabled={savingForceModelMappings()}
+												onClick={() =>
+													handleForceModelMappingsChange(!forceModelMappings())
+												}
+												class={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 disabled:opacity-50 ${forceModelMappings()
+													? "bg-brand-600"
+													: "bg-gray-200 dark:bg-gray-700"
+													}`}
+											>
+												<span
+													aria-hidden="true"
+													class={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${forceModelMappings()
+														? "translate-x-5"
+														: "translate-x-0"
+														}`}
+												/>
+											</button>
 										</div>
-										<Button
-											size="sm"
-											variant={agent.configured ? "secondary" : "primary"}
-											disabled={configuringAgent() === agent.id}
-											onClick={() => handleConfigureAgent(agent.id)}
-										>
-											<Show
-												when={configuringAgent() !== agent.id}
-												fallback={
+									</Show>
+
+									{/* Slot-based mappings */}
+									<div class="space-y-2">
+										<For each={AMP_MODEL_SLOTS}>
+											{(slot) => {
+												const mapping = () => getMappingForSlot(slot.id);
+												const isEnabled = () => !!mapping();
+												const currentTarget = () => mapping()?.alias || "";
+
+												return (
+													<div class="p-3 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700">
+														{/* Mobile: Stack vertically, Desktop: Single row */}
+														<div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+															{/* Left side: Checkbox + Slot name */}
+															<div class="flex items-center gap-2 shrink-0">
+																<input
+																	type="checkbox"
+																	checked={isEnabled()}
+																	onChange={(e) => {
+																		const checked = e.currentTarget.checked;
+																		if (checked) {
+																			const { customModels, builtInModels } =
+																				getAvailableTargetModels();
+																			const defaultTarget =
+																				customModels[0]?.value ||
+																				builtInModels.google[0]?.value ||
+																				slot.fromModel;
+																			updateSlotMapping(
+																				slot.id,
+																				defaultTarget,
+																				true,
+																			);
+																		} else {
+																			updateSlotMapping(slot.id, "", false);
+																		}
+																	}}
+																	class="w-4 h-4 text-brand-500 bg-gray-100 border-gray-300 rounded focus:ring-brand-500 dark:focus:ring-brand-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+																/>
+																<span class="text-sm font-medium text-gray-700 dark:text-gray-300 w-20">
+																	{slot.name}
+																</span>
+															</div>
+
+															{/* Right side: From -> To mapping */}
+															<div class="flex items-center gap-2 flex-1 min-w-0">
+																{/* From model (readonly) - fixed width, truncate on small screens */}
+																<div
+																	class="w-24 sm:w-28 shrink-0 px-2 py-1.5 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg text-xs text-gray-600 dark:text-gray-400 truncate"
+																	title={slot.fromLabel}
+																>
+																	{slot.fromLabel}
+																</div>
+
+																{/* Arrow */}
+																<span class="text-gray-400 text-xs shrink-0">
+																	→
+																</span>
+
+																{/* To model (dropdown) */}
+																{(() => {
+																	const { customModels, builtInModels } =
+																		getAvailableTargetModels();
+																	return (
+																		<select
+																			value={currentTarget()}
+																			onChange={(e) => {
+																				const newTarget = e.currentTarget.value;
+																				updateSlotMapping(
+																					slot.id,
+																					newTarget,
+																					true,
+																				);
+																			}}
+																			disabled={!isEnabled()}
+																			class={`flex-1 min-w-0 px-2 py-1.5 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-lg text-xs focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth [&>option]:bg-white [&>option]:dark:bg-gray-900 [&>option]:text-gray-900 [&>option]:dark:text-gray-100 [&>optgroup]:bg-white [&>optgroup]:dark:bg-gray-900 [&>optgroup]:text-gray-900 [&>optgroup]:dark:text-gray-100 ${!isEnabled()
+																				? "opacity-50 cursor-not-allowed"
+																				: ""
+																				}`}
+																		>
+																			<option value="">Select target...</option>
+																			<Show when={customModels.length > 0}>
+																				<optgroup label="Custom Provider">
+																					<For each={customModels}>
+																						{(model) => (
+																							<option value={model.value}>
+																								{model.label}
+																							</option>
+																						)}
+																					</For>
+																				</optgroup>
+																			</Show>
+																			<optgroup label="Anthropic">
+																				<For each={builtInModels.anthropic}>
+																					{(model) => (
+																						<option value={model.value}>
+																							{model.label}
+																						</option>
+																					)}
+																				</For>
+																			</optgroup>
+																			<optgroup label="Google">
+																				<For each={builtInModels.google}>
+																					{(model) => (
+																						<option value={model.value}>
+																							{model.label}
+																						</option>
+																					)}
+																				</For>
+																			</optgroup>
+																			<optgroup label="OpenAI">
+																				<For each={builtInModels.openai}>
+																					{(model) => (
+																						<option value={model.value}>
+																							{model.label}
+																						</option>
+																					)}
+																				</For>
+																			</optgroup>
+																			<optgroup label="Qwen">
+																				<For each={builtInModels.qwen}>
+																					{(model) => (
+																						<option value={model.value}>
+																							{model.label}
+																						</option>
+																					)}
+																				</For>
+																			</optgroup>
+																			<Show when={builtInModels.iflow.length > 0}>
+																				<optgroup label="iFlow">
+																					<For each={builtInModels.iflow}>
+																						{(model) => (
+																							<option value={model.value}>
+																								{model.label}
+																							</option>
+																						)}
+																					</For>
+																				</optgroup>
+																			</Show>
+																			<Show
+																				when={builtInModels.copilot.length > 0}
+																			>
+																				<optgroup label="GitHub Copilot">
+																					<For each={builtInModels.copilot}>
+																						{(model) => (
+																							<option value={model.value}>
+																								{model.label}
+																							</option>
+																						)}
+																					</For>
+																				</optgroup>
+																			</Show>
+																		</select>
+																	);
+																})()}
+
+																{/* Fork toggle */}
+																<Show when={isEnabled()}>
+																	<button
+																		type="button"
+																		onClick={() => {
+																			const currentFork =
+																				mapping()?.fork ?? false;
+																			updateSlotMapping(
+																				slot.id,
+																				currentTarget(),
+																				true,
+																				!currentFork,
+																			);
+																		}}
+																		class={`shrink-0 px-2 py-1 text-xs rounded border transition-colors ${mapping()?.fork
+																			? "bg-amber-100 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300"
+																			: "bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
+																			}`}
+																		title="Fork: Send request to both original and mapped model"
+																	>
+																		Fork
+																	</button>
+																</Show>
+															</div>
+														</div>
+													</div>
+												);
+											}}
+										</For>
+									</div>
+
+									{/* Custom Mappings Section */}
+									<div class="pt-2">
+										<p class="text-xs text-gray-500 dark:text-gray-400 mb-2">
+											Custom model mappings (for models not in predefined slots)
+										</p>
+
+										{/* Existing custom mappings */}
+										<For each={getCustomMappings()}>
+											{(mapping) => {
+												const { customModels, builtInModels } =
+													getAvailableTargetModels();
+												return (
+													<div class="p-3 mb-2 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700">
+														<div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+															{/* Checkbox */}
+															<div class="flex items-center gap-2 shrink-0">
+																<input
+																	type="checkbox"
+																	checked={mapping.enabled !== false}
+																	onChange={(e) => {
+																		updateCustomMapping(
+																			mapping.name,
+																			mapping.alias,
+																			e.currentTarget.checked,
+																		);
+																	}}
+																	class="w-4 h-4 text-brand-500 bg-gray-100 border-gray-300 rounded focus:ring-brand-500 dark:focus:ring-brand-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+																/>
+																<span class="text-xs text-gray-500 dark:text-gray-400 sm:hidden">
+																	Custom
+																</span>
+															</div>
+
+															{/* Mapping content */}
+															<div class="flex items-center gap-2 flex-1 min-w-0">
+																{/* From model (readonly) */}
+																<div
+																	class="w-28 sm:w-32 shrink-0 px-2 py-1.5 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg text-xs text-gray-600 dark:text-gray-400 font-mono truncate"
+																	title={mapping.name}
+																>
+																	{mapping.name}
+																</div>
+
+																{/* Arrow */}
+																<span class="text-gray-400 text-xs shrink-0">
+																	→
+																</span>
+
+																{/* To model (dropdown) */}
+																<select
+																	value={mapping.alias}
+																	onChange={(e) => {
+																		updateCustomMapping(
+																			mapping.name,
+																			e.currentTarget.value,
+																			mapping.enabled !== false,
+																		);
+																	}}
+																	disabled={mapping.enabled === false}
+																	class={`flex-1 min-w-0 px-2 py-1.5 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-lg text-xs focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth [&>option]:bg-white [&>option]:dark:bg-gray-900 [&>option]:text-gray-900 [&>option]:dark:text-gray-100 [&>optgroup]:bg-white [&>optgroup]:dark:bg-gray-900 [&>optgroup]:text-gray-900 [&>optgroup]:dark:text-gray-100 ${mapping.enabled === false
+																		? "opacity-50 cursor-not-allowed"
+																		: ""
+																		}`}
+																>
+																	<option value="">Select target...</option>
+																	<Show when={customModels.length > 0}>
+																		<optgroup label="Custom Provider">
+																			<For each={customModels}>
+																				{(model) => (
+																					<option value={model.value}>
+																						{model.label}
+																					</option>
+																				)}
+																			</For>
+																		</optgroup>
+																	</Show>
+																	<optgroup label="Anthropic">
+																		<For each={builtInModels.anthropic}>
+																			{(model) => (
+																				<option value={model.value}>
+																					{model.label}
+																				</option>
+																			)}
+																		</For>
+																	</optgroup>
+																	<optgroup label="Google">
+																		<For each={builtInModels.google}>
+																			{(model) => (
+																				<option value={model.value}>
+																					{model.label}
+																				</option>
+																			)}
+																		</For>
+																	</optgroup>
+																	<optgroup label="OpenAI">
+																		<For each={builtInModels.openai}>
+																			{(model) => (
+																				<option value={model.value}>
+																					{model.label}
+																				</option>
+																			)}
+																		</For>
+																	</optgroup>
+																	<optgroup label="Qwen">
+																		<For each={builtInModels.qwen}>
+																			{(model) => (
+																				<option value={model.value}>
+																					{model.label}
+																				</option>
+																			)}
+																		</For>
+																	</optgroup>
+																	<Show when={builtInModels.iflow.length > 0}>
+																		<optgroup label="iFlow">
+																			<For each={builtInModels.iflow}>
+																				{(model) => (
+																					<option value={model.value}>
+																						{model.label}
+																					</option>
+																				)}
+																			</For>
+																		</optgroup>
+																	</Show>
+																	<Show when={builtInModels.copilot.length > 0}>
+																		<optgroup label="GitHub Copilot">
+																			<For each={builtInModels.copilot}>
+																				{(model) => (
+																					<option value={model.value}>
+																						{model.label}
+																					</option>
+																				)}
+																			</For>
+																		</optgroup>
+																	</Show>
+																</select>
+
+																{/* Fork toggle */}
+																<Show when={mapping.enabled !== false}>
+																	<button
+																		type="button"
+																		onClick={() => {
+																			updateCustomMapping(
+																				mapping.name,
+																				mapping.alias,
+																				mapping.enabled !== false,
+																				!mapping.fork,
+																			);
+																		}}
+																		class={`shrink-0 px-2 py-1 text-xs rounded border transition-colors ${mapping.fork
+																			? "bg-amber-100 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300"
+																			: "bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
+																			}`}
+																		title="Fork: Send request to both original and mapped model"
+																	>
+																		Fork
+																	</button>
+																</Show>
+
+																{/* Delete button */}
+																<button
+																	type="button"
+																	onClick={() =>
+																		removeCustomMapping(mapping.name)
+																	}
+																	class="p-1.5 text-gray-400 hover:text-red-500 transition-colors shrink-0"
+																	title="Remove mapping"
+																>
+																	<svg
+																		class="w-4 h-4"
+																		fill="none"
+																		stroke="currentColor"
+																		viewBox="0 0 24 24"
+																	>
+																		<path
+																			stroke-linecap="round"
+																			stroke-linejoin="round"
+																			stroke-width="2"
+																			d="M6 18L18 6M6 6l12 12"
+																		/>
+																	</svg>
+																</button>
+															</div>
+														</div>
+													</div>
+												);
+											}}
+										</For>
+
+										{/* Add new custom mapping */}
+										<div class="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-dashed border-gray-300 dark:border-gray-600">
+											<div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+												<input
+													type="text"
+													value={newMappingFrom()}
+													onInput={(e) =>
+														setNewMappingFrom(e.currentTarget.value)
+													}
+													placeholder="From model (e.g. my-custom-model)"
+													class="flex-1 min-w-0 px-2 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-mono focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth"
+												/>
+												<span class="text-gray-400 text-xs shrink-0 hidden sm:inline">
+													→
+												</span>
+												{(() => {
+													const { customModels, builtInModels } =
+														getAvailableTargetModels();
+													return (
+														<select
+															value={newMappingTo()}
+															onChange={(e) =>
+																setNewMappingTo(e.currentTarget.value)
+															}
+															class="flex-1 min-w-0 px-2 py-1.5 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-lg text-xs focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth [&>option]:bg-white [&>option]:dark:bg-gray-900 [&>option]:text-gray-900 [&>option]:dark:text-gray-100 [&>optgroup]:bg-white [&>optgroup]:dark:bg-gray-900 [&>optgroup]:text-gray-900 [&>optgroup]:dark:text-gray-100"
+														>
+															<option value="">Select target...</option>
+															<Show when={customModels.length > 0}>
+																<optgroup label="Custom Provider">
+																	<For each={customModels}>
+																		{(model) => (
+																			<option value={model.value}>
+																				{model.label}
+																			</option>
+																		)}
+																	</For>
+																</optgroup>
+															</Show>
+															<optgroup label="Anthropic">
+																<For each={builtInModels.anthropic}>
+																	{(model) => (
+																		<option value={model.value}>
+																			{model.label}
+																		</option>
+																	)}
+																</For>
+															</optgroup>
+															<optgroup label="Google">
+																<For each={builtInModels.google}>
+																	{(model) => (
+																		<option value={model.value}>
+																			{model.label}
+																		</option>
+																	)}
+																</For>
+															</optgroup>
+															<optgroup label="OpenAI">
+																<For each={builtInModels.openai}>
+																	{(model) => (
+																		<option value={model.value}>
+																			{model.label}
+																		</option>
+																	)}
+																</For>
+															</optgroup>
+															<optgroup label="Qwen">
+																<For each={builtInModels.qwen}>
+																	{(model) => (
+																		<option value={model.value}>
+																			{model.label}
+																		</option>
+																	)}
+																</For>
+															</optgroup>
+															<Show when={builtInModels.iflow.length > 0}>
+																<optgroup label="iFlow">
+																	<For each={builtInModels.iflow}>
+																		{(model) => (
+																			<option value={model.value}>
+																				{model.label}
+																			</option>
+																		)}
+																	</For>
+																</optgroup>
+															</Show>
+															<Show when={builtInModels.copilot.length > 0}>
+																<optgroup label="GitHub Copilot">
+																	<For each={builtInModels.copilot}>
+																		{(model) => (
+																			<option value={model.value}>
+																				{model.label}
+																			</option>
+																		)}
+																	</For>
+																</optgroup>
+															</Show>
+														</select>
+													);
+												})()}
+												<Button
+													variant="secondary"
+													size="sm"
+													onClick={addCustomMapping}
+													disabled={
+														!newMappingFrom().trim() || !newMappingTo().trim()
+													}
+													class="shrink-0"
+												>
 													<svg
-														class="w-4 h-4 animate-spin"
+														class="w-4 h-4"
+														fill="none"
+														stroke="currentColor"
+														viewBox="0 0 24 24"
+													>
+														<path
+															stroke-linecap="round"
+															stroke-linejoin="round"
+															stroke-width="2"
+															d="M12 4v16m8-8H4"
+														/>
+													</svg>
+												</Button>
+											</div>
+										</div>
+									</div>
+								</div>
+
+								<div class="border-t border-gray-200 dark:border-gray-700" />
+
+								{/* Custom OpenAI-Compatible Providers */}
+								<div class="space-y-4">
+									<div>
+										<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+											Custom OpenAI-Compatible Providers
+										</span>
+										<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+											Add external providers (ZenMux, OpenRouter, etc.) for
+											additional models
+										</p>
+									</div>
+
+									{/* Provider Table */}
+									<Show when={(config().ampOpenaiProviders || []).length > 0}>
+										<div class="overflow-x-auto">
+											<table class="w-full text-sm">
+												<thead>
+													<tr class="text-left text-xs text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+														<th class="pb-2 font-medium">Name</th>
+														<th class="pb-2 font-medium">Base URL</th>
+														<th class="pb-2 font-medium">Models</th>
+														<th class="pb-2 font-medium w-20">Actions</th>
+													</tr>
+												</thead>
+												<tbody class="divide-y divide-gray-100 dark:divide-gray-800">
+													<For each={config().ampOpenaiProviders || []}>
+														{(provider) => (
+															<tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+																<td class="py-2 pr-2">
+																	<span class="font-medium text-gray-900 dark:text-gray-100">
+																		{provider.name}
+																	</span>
+																</td>
+																<td class="py-2 pr-2">
+																	<span
+																		class="text-xs text-gray-500 dark:text-gray-400 font-mono truncate max-w-[200px] block"
+																		title={provider.baseUrl}
+																	>
+																		{provider.baseUrl}
+																	</span>
+																</td>
+																<td class="py-2 pr-2">
+																	<span class="text-xs text-gray-500 dark:text-gray-400">
+																		{provider.models?.length || 0} model
+																		{(provider.models?.length || 0) !== 1
+																			? "s"
+																			: ""}
+																	</span>
+																</td>
+																<td class="py-2">
+																	<div class="flex items-center gap-1">
+																		<button
+																			type="button"
+																			onClick={() => openProviderModal(provider)}
+																			class="p-1.5 text-gray-400 hover:text-brand-500 transition-colors"
+																			title="Edit provider"
+																		>
+																			<svg
+																				class="w-4 h-4"
+																				fill="none"
+																				stroke="currentColor"
+																				viewBox="0 0 24 24"
+																			>
+																				<path
+																					stroke-linecap="round"
+																					stroke-linejoin="round"
+																					stroke-width="2"
+																					d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+																				/>
+																			</svg>
+																		</button>
+																		<button
+																			type="button"
+																			onClick={() =>
+																				deleteOpenAIProvider(provider.id)
+																			}
+																			class="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
+																			title="Delete provider"
+																		>
+																			<svg
+																				class="w-4 h-4"
+																				fill="none"
+																				stroke="currentColor"
+																				viewBox="0 0 24 24"
+																			>
+																				<path
+																					stroke-linecap="round"
+																					stroke-linejoin="round"
+																					stroke-width="2"
+																					d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+																				/>
+																			</svg>
+																		</button>
+																	</div>
+																</td>
+															</tr>
+														)}
+													</For>
+												</tbody>
+											</table>
+										</div>
+									</Show>
+
+									{/* Empty state */}
+									<Show when={(config().ampOpenaiProviders || []).length === 0}>
+										<div class="text-center py-6 text-gray-400 dark:text-gray-500 text-sm">
+											No custom providers configured
+										</div>
+									</Show>
+
+									{/* Add Provider Button */}
+									<Button
+										variant="secondary"
+										size="sm"
+										onClick={() => openProviderModal()}
+										class="w-full"
+									>
+										<svg
+											class="w-4 h-4 mr-1.5"
+											fill="none"
+											stroke="currentColor"
+											viewBox="0 0 24 24"
+										>
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												stroke-width="2"
+												d="M12 4v16m8-8H4"
+											/>
+										</svg>
+										Add Provider
+									</Button>
+								</div>
+
+								{/* Provider Modal */}
+								<Show when={providerModalOpen()}>
+									<div
+										class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+										onClick={(e) => {
+											if (e.target === e.currentTarget) closeProviderModal();
+										}}
+									>
+										<div
+											class="bg-white dark:bg-gray-900 rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
+											onClick={(e) => e.stopPropagation()}
+										>
+											<div class="sticky top-0 bg-white dark:bg-gray-900 px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+												<h3 class="font-semibold text-gray-900 dark:text-gray-100">
+													{editingProviderId() ? "Edit Provider" : "Add Provider"}
+												</h3>
+												<button
+													type="button"
+													onClick={closeProviderModal}
+													class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+												>
+													<svg
+														class="w-5 h-5"
+														fill="none"
+														stroke="currentColor"
+														viewBox="0 0 24 24"
+													>
+														<path
+															stroke-linecap="round"
+															stroke-linejoin="round"
+															stroke-width="2"
+															d="M6 18L18 6M6 6l12 12"
+														/>
+													</svg>
+												</button>
+											</div>
+
+											<div class="p-4 space-y-4">
+												{/* Provider Name */}
+												<label class="block">
+													<span class="text-xs font-medium text-gray-600 dark:text-gray-400">
+														Provider Name
+													</span>
+													<input
+														type="text"
+														value={providerName()}
+														onInput={(e) =>
+															setProviderName(e.currentTarget.value)
+														}
+														placeholder="e.g. zenmux, openrouter"
+														class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth"
+													/>
+												</label>
+
+												{/* Base URL */}
+												<label class="block">
+													<span class="text-xs font-medium text-gray-600 dark:text-gray-400">
+														Base URL
+													</span>
+													<input
+														type="text"
+														value={providerBaseUrl()}
+														onInput={(e) =>
+															setProviderBaseUrl(e.currentTarget.value)
+														}
+														placeholder="https://api.example.com/v1"
+														class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-mono focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth"
+													/>
+												</label>
+
+												{/* API Key */}
+												<label class="block">
+													<span class="text-xs font-medium text-gray-600 dark:text-gray-400">
+														API Key
+													</span>
+													<input
+														type="password"
+														value={providerApiKey()}
+														onInput={(e) =>
+															setProviderApiKey(e.currentTarget.value)
+														}
+														placeholder="sk-..."
+														class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-mono focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth"
+													/>
+												</label>
+
+												{/* Models */}
+												<div class="space-y-2">
+													<span class="text-xs font-medium text-gray-600 dark:text-gray-400">
+														Model Aliases (map proxy model names to provider model
+														names)
+													</span>
+
+													{/* Existing models */}
+													<For each={providerModels()}>
+														{(model, index) => (
+															<div class="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+																<div class="flex-1 flex items-center gap-2 text-xs font-mono overflow-hidden">
+																	<span
+																		class="text-gray-700 dark:text-gray-300 truncate"
+																		title={model.name}
+																	>
+																		{model.name}
+																	</span>
+																	<Show when={model.alias}>
+																		<svg
+																			class="w-4 h-4 text-gray-400 flex-shrink-0"
+																			fill="none"
+																			stroke="currentColor"
+																			viewBox="0 0 24 24"
+																		>
+																			<path
+																				stroke-linecap="round"
+																				stroke-linejoin="round"
+																				stroke-width="2"
+																				d="M13 7l5 5m0 0l-5 5m5-5H6"
+																			/>
+																		</svg>
+																		<span
+																			class="text-brand-500 truncate"
+																			title={model.alias}
+																		>
+																			{model.alias}
+																		</span>
+																	</Show>
+																</div>
+																<button
+																	type="button"
+																	onClick={() => removeProviderModel(index())}
+																	class="p-1 text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
+																	title="Remove model"
+																>
+																	<svg
+																		class="w-4 h-4"
+																		fill="none"
+																		stroke="currentColor"
+																		viewBox="0 0 24 24"
+																	>
+																		<path
+																			stroke-linecap="round"
+																			stroke-linejoin="round"
+																			stroke-width="2"
+																			d="M6 18L18 6M6 6l12 12"
+																		/>
+																	</svg>
+																</button>
+															</div>
+														)}
+													</For>
+
+													{/* Add new model */}
+													<div class="flex flex-col sm:flex-row gap-2">
+														<input
+															type="text"
+															value={newModelName()}
+															onInput={(e) =>
+																setNewModelName(e.currentTarget.value)
+															}
+															placeholder="Provider model (e.g. anthropic/claude-4)"
+															class="flex-1 px-2 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-mono focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth"
+														/>
+														<input
+															type="text"
+															value={newModelAlias()}
+															onInput={(e) =>
+																setNewModelAlias(e.currentTarget.value)
+															}
+															placeholder="Alias (e.g. claude-4-20251101)"
+															class="flex-1 px-2 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-mono focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth"
+														/>
+														<Button
+															variant="secondary"
+															size="sm"
+															onClick={addProviderModel}
+															disabled={!newModelName().trim()}
+														>
+															<svg
+																class="w-4 h-4"
+																fill="none"
+																stroke="currentColor"
+																viewBox="0 0 24 24"
+															>
+																<path
+																	stroke-linecap="round"
+																	stroke-linejoin="round"
+																	stroke-width="2"
+																	d="M12 4v16m8-8H4"
+																/>
+															</svg>
+														</Button>
+													</div>
+												</div>
+
+												{/* Test Connection */}
+												<div class="flex items-center gap-2">
+													<Button
+														variant="secondary"
+														size="sm"
+														onClick={testProviderConnection}
+														disabled={
+															testingProvider() ||
+															!providerBaseUrl().trim() ||
+															!providerApiKey().trim()
+														}
+													>
+														{testingProvider() ? (
+															<span class="flex items-center gap-1.5">
+																<svg
+																	class="w-3 h-3 animate-spin"
+																	fill="none"
+																	viewBox="0 0 24 24"
+																>
+																	<circle
+																		class="opacity-25"
+																		cx="12"
+																		cy="12"
+																		r="10"
+																		stroke="currentColor"
+																		stroke-width="4"
+																	/>
+																	<path
+																		class="opacity-75"
+																		fill="currentColor"
+																		d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+																	/>
+																</svg>
+																Testing...
+															</span>
+														) : (
+															"Test Connection"
+														)}
+													</Button>
+												</div>
+
+												{/* Test result indicator */}
+												<Show when={providerTestResult()}>
+													{(result) => (
+														<div
+															class={`flex items-center gap-2 p-2 rounded-lg text-xs ${result().success
+																? "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400"
+																: "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400"
+																}`}
+														>
+															<Show
+																when={result().success}
+																fallback={
+																	<svg
+																		class="w-4 h-4 flex-shrink-0"
+																		fill="none"
+																		stroke="currentColor"
+																		viewBox="0 0 24 24"
+																	>
+																		<path
+																			stroke-linecap="round"
+																			stroke-linejoin="round"
+																			stroke-width="2"
+																			d="M6 18L18 6M6 6l12 12"
+																		/>
+																	</svg>
+																}
+															>
+																<svg
+																	class="w-4 h-4 flex-shrink-0"
+																	fill="none"
+																	stroke="currentColor"
+																	viewBox="0 0 24 24"
+																>
+																	<path
+																		stroke-linecap="round"
+																		stroke-linejoin="round"
+																		stroke-width="2"
+																		d="M5 13l4 4L19 7"
+																	/>
+																</svg>
+															</Show>
+															<span>{result().message}</span>
+															<Show when={result().modelsFound}>
+																<span class="text-gray-500 dark:text-gray-400">
+																	({result().modelsFound} models)
+																</span>
+															</Show>
+															<Show when={result().latencyMs}>
+																<span class="text-gray-500 dark:text-gray-400">
+																	{result().latencyMs}ms
+																</span>
+															</Show>
+														</div>
+													)}
+												</Show>
+											</div>
+
+											{/* Modal Footer */}
+											<div class="sticky bottom-0 bg-white dark:bg-gray-900 px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+												<Button
+													variant="ghost"
+													size="sm"
+													onClick={closeProviderModal}
+												>
+													Cancel
+												</Button>
+												<Button
+													variant="primary"
+													size="sm"
+													onClick={saveOpenAIProvider}
+													disabled={
+														!providerName().trim() ||
+														!providerBaseUrl().trim() ||
+														!providerApiKey().trim()
+													}
+												>
+													{editingProviderId() ? "Save Changes" : "Add Provider"}
+												</Button>
+											</div>
+										</div>
+									</div>
+								</Show>
+
+								<p class="text-xs text-gray-400 dark:text-gray-500">
+									After changing settings, restart the proxy for changes to take
+									effect.
+								</p>
+							</div>
+						</div>
+
+						{/* Advanced Settings */}
+						<div
+							class="space-y-4"
+							classList={{ hidden: activeTab() !== "advanced" }}
+						>
+							<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+								Advanced Settings
+							</h2>
+
+							<div class="space-y-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+								<Switch
+									label="Debug Mode"
+									description="Enable verbose logging for troubleshooting"
+									checked={config().debug}
+									onChange={(checked) => handleConfigChange("debug", checked)}
+								/>
+
+								<div class="border-t border-gray-200 dark:border-gray-700" />
+
+								<Switch
+									label="Usage Statistics"
+									description="Track request counts and token usage"
+									checked={config().usageStatsEnabled}
+									onChange={(checked) =>
+										handleConfigChange("usageStatsEnabled", checked)
+									}
+								/>
+
+								<div class="border-t border-gray-200 dark:border-gray-700" />
+
+								<Switch
+									label="Request Logging"
+									description="Log all API requests for debugging"
+									checked={config().requestLogging}
+									onChange={(checked) =>
+										handleConfigChange("requestLogging", checked)
+									}
+								/>
+
+								<div class="border-t border-gray-200 dark:border-gray-700" />
+
+								<Switch
+									label="Commercial Mode"
+									description="Disable request logging middleware for lower memory usage (requires restart)"
+									checked={config().commercialMode ?? false}
+									onChange={(checked) =>
+										handleConfigChange("commercialMode", checked)
+									}
+								/>
+
+								<div class="border-t border-gray-200 dark:border-gray-700" />
+
+								<Switch
+									label="Log to File"
+									description="Write logs to rotating files instead of stdout"
+									checked={config().loggingToFile}
+									onChange={(checked) =>
+										handleConfigChange("loggingToFile", checked)
+									}
+								/>
+
+								<Show when={config().loggingToFile}>
+									<div class="flex items-center justify-between">
+										<div class="flex-1">
+											<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+												Max Log Size (MB)
+											</span>
+											<p class="text-xs text-gray-500 dark:text-gray-400">
+												Maximum total size of log files before rotation
+											</p>
+										</div>
+										<input
+											type="number"
+											min="10"
+											max="1000"
+											value={config().logsMaxTotalSizeMb || 100}
+											onChange={(e) =>
+												handleConfigChange(
+													"logsMaxTotalSizeMb",
+													parseInt(e.currentTarget.value) || 100,
+												)
+											}
+											class="w-24 px-3 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-right focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+										/>
+									</div>
+								</Show>
+
+								<Show when={appStore.proxyStatus().running}>
+									<div class="border-t border-gray-200 dark:border-gray-700" />
+
+									<div class="flex items-center justify-between">
+										<div class="flex-1">
+											<div class="flex items-center gap-2">
+												<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+													WebSocket Authentication
+												</span>
+												<Show when={savingWebsocketAuth()}>
+													<svg
+														class="w-4 h-4 animate-spin text-brand-500"
 														fill="none"
 														viewBox="0 0 24 24"
 													>
@@ -5232,71 +3752,430 @@ export function SettingsPage() {
 															d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
 														/>
 													</svg>
+												</Show>
+											</div>
+											<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+												Require authentication for WebSocket connections. Updates
+												live without restart.
+											</p>
+										</div>
+										<button
+											type="button"
+											role="switch"
+											aria-checked={websocketAuth()}
+											disabled={savingWebsocketAuth()}
+											onClick={() => handleWebsocketAuthChange(!websocketAuth())}
+											class={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 disabled:opacity-50 ${websocketAuth()
+												? "bg-brand-600"
+												: "bg-gray-200 dark:bg-gray-700"
+												}`}
+										>
+											<span
+												aria-hidden="true"
+												class={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${websocketAuth() ? "translate-x-5" : "translate-x-0"
+													}`}
+											/>
+										</button>
+									</div>
+								</Show>
+							</div>
+						</div>
+
+						{/* Quota Exceeded Behavior */}
+						<div
+							class="space-y-4"
+							classList={{ hidden: activeTab() !== "advanced" }}
+						>
+							<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+								Quota Exceeded Behavior
+							</h2>
+
+							<div class="space-y-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+								<Switch
+									label="Auto-switch Project"
+									description="Automatically switch to another project when quota is exceeded"
+									checked={config().quotaSwitchProject}
+									onChange={(checked) =>
+										handleConfigChange("quotaSwitchProject", checked)
+									}
+								/>
+
+								<div class="border-t border-gray-200 dark:border-gray-700" />
+
+								<Switch
+									label="Switch to Preview Model"
+									description="Fall back to preview/beta models when quota is exceeded"
+									checked={config().quotaSwitchPreviewModel}
+									onChange={(checked) =>
+										handleConfigChange("quotaSwitchPreviewModel", checked)
+									}
+								/>
+							</div>
+						</div>
+
+						{/* OAuth Excluded Models */}
+						<Show when={appStore.proxyStatus().running}>
+							<div
+								class="space-y-4"
+								classList={{ hidden: activeTab() !== "advanced" }}
+							>
+								<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+									OAuth Excluded Models
+								</h2>
+
+								<div class="space-y-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+									<p class="text-xs text-gray-500 dark:text-gray-400">
+										Block specific models from being used with OAuth providers.
+										Updates live without restart.
+									</p>
+
+									{/* Add new exclusion form */}
+									<div class="flex gap-2">
+										<select
+											value={newExcludedProvider()}
+											onChange={(e) =>
+												setNewExcludedProvider(e.currentTarget.value)
+											}
+											class="flex-1 px-3 py-2 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent [&>option]:bg-white [&>option]:dark:bg-gray-900 [&>option]:text-gray-900 [&>option]:dark:text-gray-100"
+										>
+											<option value="">Select provider...</option>
+											<option value="gemini">Gemini</option>
+											<option value="claude">Claude</option>
+											<option value="qwen">Qwen</option>
+											<option value="iflow">iFlow</option>
+											<option value="openai">OpenAI</option>
+											<option value="copilot">GitHub Copilot</option>
+										</select>
+										{/* Model dropdown with mapped models from Amp CLI */}
+										{(() => {
+											const mappings = config().ampModelMappings || [];
+											const mappedModels = mappings
+												.filter((m) => m.enabled !== false && m.alias)
+												.map((m) => m.alias);
+											const { builtInModels } = getAvailableTargetModels();
+
+											// Get models for selected provider
+											const getModelsForProvider = () => {
+												const provider = newExcludedProvider();
+												switch (provider) {
+													case "gemini":
+														return builtInModels.google;
+													case "claude":
+														return builtInModels.anthropic;
+													case "openai":
+														return builtInModels.openai;
+													case "qwen":
+														return builtInModels.qwen;
+													case "iflow":
+														return builtInModels.iflow;
+													case "copilot":
+														return builtInModels.copilot;
+													default:
+														return [];
 												}
+											};
+
+											return (
+												<select
+													value={newExcludedModel()}
+													onChange={(e) =>
+														setNewExcludedModel(e.currentTarget.value)
+													}
+													class="flex-[2] px-3 py-2 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent [&>option]:bg-white [&>option]:dark:bg-gray-900 [&>option]:text-gray-900 [&>option]:dark:text-gray-100 [&>optgroup]:bg-white [&>optgroup]:dark:bg-gray-900 [&>optgroup]:text-gray-900 [&>optgroup]:dark:text-gray-100"
+												>
+													<option value="">Select model...</option>
+													{/* Amp Model Mappings (target models) */}
+													<Show when={mappedModels.length > 0}>
+														<optgroup label="Amp Model Mappings">
+															<For each={[...new Set(mappedModels)]}>
+																{(model) => (
+																	<option value={model}>{model}</option>
+																)}
+															</For>
+														</optgroup>
+													</Show>
+													{/* Provider-specific models */}
+													<Show when={getModelsForProvider().length > 0}>
+														<optgroup
+															label={`${newExcludedProvider() || "Provider"} Models`}
+														>
+															<For each={getModelsForProvider()}>
+																{(model) => (
+																	<option value={model.value}>
+																		{model.label}
+																	</option>
+																)}
+															</For>
+														</optgroup>
+													</Show>
+												</select>
+											);
+										})()}
+										<Button
+											variant="primary"
+											size="sm"
+											onClick={handleAddExcludedModel}
+											disabled={
+												savingExcludedModels() ||
+												!newExcludedProvider() ||
+												!newExcludedModel()
+											}
+										>
+											<Show
+												when={savingExcludedModels()}
+												fallback={<span>Add</span>}
 											>
-												{agent.configured ? "Reconfigure" : "Configure"}
+												<svg
+													class="w-4 h-4 animate-spin"
+													fill="none"
+													viewBox="0 0 24 24"
+												>
+													<circle
+														class="opacity-25"
+														cx="12"
+														cy="12"
+														r="10"
+														stroke="currentColor"
+														stroke-width="4"
+													/>
+													<path
+														class="opacity-75"
+														fill="currentColor"
+														d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+													/>
+												</svg>
 											</Show>
 										</Button>
 									</div>
-								)}
-							</For>
-							<Show when={agents().length === 0}>
-								<div class="p-4 text-center text-sm text-gray-500 dark:text-gray-400">
-									No CLI agents detected
+
+									{/* Current exclusions */}
+									<Show when={loadingExcludedModels()}>
+										<div class="text-center py-4 text-gray-500">Loading...</div>
+									</Show>
+
+									<Show
+										when={
+											!loadingExcludedModels() &&
+											Object.keys(oauthExcludedModels()).length === 0
+										}
+									>
+										<div class="text-center py-4 text-gray-400 dark:text-gray-500 text-sm">
+											No models excluded yet
+										</div>
+									</Show>
+
+									<Show
+										when={
+											!loadingExcludedModels() &&
+											Object.keys(oauthExcludedModels()).length > 0
+										}
+									>
+										<div class="space-y-3">
+											<For each={Object.entries(oauthExcludedModels())}>
+												{([provider, models]) => (
+													<div class="space-y-2">
+														<div class="flex items-center gap-2">
+															<span class="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase">
+																{provider}
+															</span>
+															<span class="text-xs text-gray-400">
+																({models.length} excluded)
+															</span>
+														</div>
+														<div class="flex flex-wrap gap-2">
+															<For each={models}>
+																{(model) => (
+																	<span class="inline-flex items-center gap-1 px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-md text-xs">
+																		{model}
+																		<button
+																			type="button"
+																			onClick={() =>
+																				handleRemoveExcludedModel(provider, model)
+																			}
+																			disabled={savingExcludedModels()}
+																			class="hover:text-red-900 dark:hover:text-red-300 disabled:opacity-50"
+																			title="Remove"
+																		>
+																			<svg
+																				class="w-3 h-3"
+																				fill="none"
+																				stroke="currentColor"
+																				viewBox="0 0 24 24"
+																			>
+																				<path
+																					stroke-linecap="round"
+																					stroke-linejoin="round"
+																					stroke-width="2"
+																					d="M6 18L18 6M6 6l12 12"
+																				/>
+																			</svg>
+																		</button>
+																	</span>
+																)}
+															</For>
+														</div>
+													</div>
+												)}
+											</For>
+										</div>
+									</Show>
 								</div>
-							</Show>
-						</div>
-					</div>
-
-					{/* About */}
-					<div
-						class="space-y-4"
-						classList={{ hidden: activeTab() !== "advanced" }}
-					>
-						<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
-							About
-						</h2>
-
-						<div class="p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 text-center">
-							<div class="w-12 h-12 mx-auto rounded-xl flex items-center justify-center mb-3">
-								<img
-									src={
-										themeStore.resolvedTheme() === "dark"
-											? "/proxypal-white.png"
-											: "/proxypal-black.png"
-									}
-									alt="ProxyPal Logo"
-									class="w-12 h-12 rounded-xl object-contain"
-								/>
 							</div>
-							<h3 class="font-bold text-gray-900 dark:text-gray-100">
-								ProxyPal
-							</h3>
-							<p class="text-sm text-gray-500 dark:text-gray-400">
-								Version {appVersion()}
-							</p>
-							<p class="text-xs text-gray-400 dark:text-gray-500 mt-2">
-								Built with love by OpenCodeKit
-							</p>
+						</Show>
+
+						{/* Copilot Detection */}
+						<div
+							class="space-y-4"
+							classList={{ hidden: activeTab() !== "providers" }}
+						>
+							<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+								Copilot API Detection
+							</h2>
+
+							<div class="space-y-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+								<p class="text-xs text-gray-500 dark:text-gray-400">
+									ProxyPal automatically detects and uses copilot-api for GitHub
+									Copilot integration. No manual setup required - it works
+									automatically.
+								</p>
+
+								<Button
+									variant="secondary"
+									size="sm"
+									onClick={runCopilotDetection}
+									disabled={detectingCopilot()}
+								>
+									{detectingCopilot() ? "Detecting..." : "Check System"}
+								</Button>
+
+								<Show when={copilotDetection()}>
+									{(detection) => (
+										<div class="space-y-3 text-xs">
+											<div class="flex items-center gap-2">
+												<span
+													class={`w-2 h-2 rounded-full ${detection().nodeAvailable ? "bg-green-500" : "bg-red-500"}`}
+												/>
+												<span class="font-medium">Node.js:</span>
+												<span
+													class={
+														detection().nodeAvailable
+															? "text-green-600 dark:text-green-400"
+															: "text-red-600 dark:text-red-400"
+													}
+												>
+													{detection().nodeAvailable
+														? detection().nodeBin || "Available"
+														: "Not Found"}
+												</span>
+											</div>
+
+											<div class="flex items-center gap-2">
+												<span
+													class={`w-2 h-2 rounded-full ${detection().installed ? "bg-green-500" : "bg-blue-500"}`}
+												/>
+												<span class="font-medium">copilot-api:</span>
+												<span
+													class={
+														detection().installed
+															? "text-green-600 dark:text-green-400"
+															: "text-blue-600 dark:text-blue-400"
+													}
+												>
+													{detection().installed
+														? `Installed${detection().version ? ` (v${detection().version})` : ""}`
+														: "Will download automatically"}
+												</span>
+											</div>
+
+											<Show when={!detection().installed}>
+												<div class="text-gray-500 dark:text-gray-400 pl-4">
+													copilot-api will be downloaded automatically on first
+													use via npx. This is a one-time process and requires
+													internet connection.
+												</div>
+											</Show>
+
+											<Show
+												when={detection().installed && detection().copilotBin}
+											>
+												<div class="text-gray-500 dark:text-gray-400 pl-4">
+													Path:{" "}
+													<code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">
+														{detection().copilotBin}
+													</code>
+												</div>
+											</Show>
+
+											<Show when={detection().npxBin}>
+												<div class="text-gray-500 dark:text-gray-400 pl-4">
+													npx available at{" "}
+													<code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">
+														{detection().npxBin}
+													</code>
+												</div>
+											</Show>
+
+											<Show when={!detection().nodeAvailable}>
+												<div class="mt-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded text-red-700 dark:text-red-400">
+													<p class="font-medium">Node.js not found</p>
+													<p class="mt-1">
+														Install Node.js from{" "}
+														<a
+															href="https://nodejs.org/"
+															target="_blank"
+															class="underline"
+															rel="noopener"
+														>
+															nodejs.org
+														</a>{" "}
+														or use a version manager (nvm, volta, fnm).
+													</p>
+													<Show when={detection().checkedNodePaths.length > 0}>
+														<details class="mt-2">
+															<summary class="cursor-pointer text-xs">
+																Checked paths
+															</summary>
+															<ul class="mt-1 pl-4 text-xs opacity-75">
+																<For each={detection().checkedNodePaths}>
+																	{(p) => <li>{p}</li>}
+																</For>
+															</ul>
+														</details>
+													</Show>
+												</div>
+											</Show>
+										</div>
+									)}
+								</Show>
+							</div>
 						</div>
-					</div>
-				</div>
-			</main>
-			<Show when={configResult()}>
-				{(result) => (
-					<div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-fade-in">
-						<div class="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-lg animate-scale-in">
-							<div class="p-6">
-								<div class="flex items-center justify-between mb-4">
-									<h2 class="text-lg font-bold text-gray-900 dark:text-gray-100">
-										{result().agentName} Configured
-									</h2>
-									<button
-										onClick={() => setConfigResult(null)}
-										class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+
+						{/* Accounts */}
+						<div
+							class="space-y-4"
+							classList={{ hidden: activeTab() !== "providers" }}
+						>
+							<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+								Connected Accounts
+							</h2>
+
+							<div class="p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+								<div class="flex items-center justify-between">
+									<div>
+										<p class="text-sm font-medium text-gray-700 dark:text-gray-300">
+											{connectedCount()} of 4 providers connected
+										</p>
+										<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+											Manage your AI provider connections
+										</p>
+									</div>
+									<Button
+										variant="secondary"
+										size="sm"
+										onClick={() => setCurrentPage("dashboard")}
 									>
 										<svg
-											class="w-5 h-5"
+											class="w-4 h-4 mr-1.5"
 											fill="none"
 											stroke="currentColor"
 											viewBox="0 0 24 24"
@@ -5305,93 +4184,1262 @@ export function SettingsPage() {
 												stroke-linecap="round"
 												stroke-linejoin="round"
 												stroke-width="2"
-												d="M6 18L18 6M6 6l12 12"
+												d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+											/>
+										</svg>
+										Manage
+									</Button>
+								</div>
+							</div>
+						</div>
+
+						{/* OAuth Model Mappings */}
+						<div
+							class="space-y-4"
+							classList={{ hidden: activeTab() !== "providers" }}
+						>
+							<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+								OAuth Model Mappings
+							</h2>
+
+							<div class="p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+								<Show
+									when={Object.keys(oauthModelsBySource()).length > 0}
+									fallback={
+										<p class="text-sm text-gray-500 dark:text-gray-400">
+											No OAuth-sourced models available. Connect an OAuth provider
+											to see models here.
+										</p>
+									}
+								>
+									<div class="space-y-4">
+										<For each={Object.entries(oauthModelsBySource())}>
+											{([source, modelIds]) => (
+												<div>
+													<p class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 flex items-center gap-2">
+														<span
+															class={`w-2 h-2 rounded-full ${source.includes("copilot")
+																? "bg-purple-500"
+																: source.includes("claude")
+																	? "bg-orange-500"
+																	: source.includes("gemini")
+																		? "bg-blue-500"
+																		: "bg-green-500"
+																}`}
+														/>
+														{source
+															.replace(/-/g, " ")
+															.replace(/\b\w/g, (c) => c.toUpperCase())}
+													</p>
+													<div class="flex flex-wrap gap-1.5">
+														<For each={modelIds}>
+															{(modelId) => (
+																<span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
+																	{modelId}
+																</span>
+															)}
+														</For>
+													</div>
+												</div>
+											)}
+										</For>
+									</div>
+								</Show>
+								<p class="text-xs text-gray-400 dark:text-gray-500 mt-3">
+									These models are available through OAuth-authenticated accounts
+									and are automatically routed by ProxyPal.
+								</p>
+							</div>
+						</div>
+
+						{/* SSH Settings */}
+						<div class="space-y-4" classList={{ hidden: activeTab() !== "ssh" }}>
+							<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+								SSH API Connections
+							</h2>
+							<p class="text-sm text-gray-500 dark:text-gray-400">
+								Securely tunnel your local API (port 8317) to a remote server for
+								shared access.
+							</p>
+
+							{/* List */}
+							<div class="space-y-3">
+								<For each={config().sshConfigs || []}>
+									{(ssh: SshConfig) => {
+										const statusProps = createMemo(() => {
+											const status = appStore.sshStatus()[ssh.id] || {
+												id: ssh.id,
+												status: ssh.enabled ? "connecting" : "disconnected",
+												message: undefined,
+											};
+
+											let displayStatus = status.status;
+											const displayMessage = status.message;
+
+											if (ssh.enabled) {
+												if (!displayStatus || displayStatus === "disconnected") {
+													displayStatus = "connecting";
+												}
+											} else {
+												if (
+													displayStatus === "connected" ||
+													displayStatus === "connecting"
+												) {
+													displayStatus = "disconnected";
+												}
+											}
+											return { status: displayStatus, message: displayMessage };
+										});
+
+										return (
+											<div class="p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+												<div>
+													<div class="font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
+														<span>
+															{ssh.username}@{ssh.host}:{ssh.port}
+														</span>
+													</div>
+													<div class="text-xs text-gray-500 mt-1">
+														Forward: Remote :{ssh.remotePort} &rarr; Local :
+														{ssh.localPort}
+													</div>
+													<Show when={statusProps().message}>
+														<div
+															class={`text-xs mt-1 break-all flex items-start gap-1 ${statusProps().status === "error"
+																? "text-red-500"
+																: "text-gray-500"
+																}`}
+														>
+															<span class="opacity-75">&gt;</span>
+															<span>{statusProps().message}</span>
+														</div>
+													</Show>
+												</div>
+												<div class="flex items-center gap-4">
+													<div class="flex items-center gap-2">
+														<div
+															class={`w-2.5 h-2.5 rounded-full ${statusProps().status === "connected"
+																? "bg-green-500"
+																: statusProps().status === "error"
+																	? "bg-red-500"
+																	: statusProps().status === "connecting" ||
+																		statusProps().status === "reconnecting"
+																		? "bg-orange-500 animate-pulse"
+																		: "bg-gray-400"
+																}`}
+														/>
+														<span class="text-sm font-medium text-gray-600 dark:text-gray-400 capitalize min-w-[50px]">
+															{statusProps().status}
+														</span>
+													</div>
+													<div class="h-6 w-px bg-gray-200 dark:bg-gray-700"></div>
+													<Switch
+														checked={ssh.enabled}
+														onChange={(val) => handleToggleSsh(ssh.id, val)}
+													/>
+													<button
+														class="p-2 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
+														title="Edit Connection"
+														onClick={() => handleEditSsh(ssh)}
+													>
+														<svg
+															xmlns="http://www.w3.org/2000/svg"
+															class="w-4 h-4"
+															fill="none"
+															viewBox="0 0 24 24"
+															stroke="currentColor"
+														>
+															<path
+																stroke-linecap="round"
+																stroke-linejoin="round"
+																stroke-width="2"
+																d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+															/>
+														</svg>
+													</button>
+													<button
+														class="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+														title="Delete Connection"
+														onClick={() => handleDeleteSsh(ssh.id)}
+													>
+														<svg
+															xmlns="http://www.w3.org/2000/svg"
+															class="w-4 h-4"
+															fill="none"
+															viewBox="0 0 24 24"
+															stroke="currentColor"
+														>
+															<path
+																stroke-linecap="round"
+																stroke-linejoin="round"
+																stroke-width="2"
+																d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+															/>
+														</svg>
+													</button>
+												</div>
+											</div>
+										);
+									}}
+								</For>
+								<Show when={(config().sshConfigs || []).length === 0}>
+									<div class="text-center py-8 text-gray-500 dark:text-gray-400 bg-gray-50/50 dark:bg-gray-800/30 rounded-xl border border-dashed border-gray-200 dark:border-gray-700">
+										No SSH connections configured
+									</div>
+								</Show>
+							</div>
+
+							{/* Add Form */}
+							<div class="p-5 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 space-y-4">
+								<div class="flex items-center justify-between">
+									<h3 class="font-medium text-gray-900 dark:text-gray-100">
+										{sshId() ? "Edit Connection" : "Add New Connection"}
+									</h3>
+									<Show when={sshId()}>
+										<button
+											onClick={handleCancelEdit}
+											class="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+										>
+											Cancel Edit
+										</button>
+									</Show>
+								</div>
+								<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+									<div class="space-y-1">
+										<label class="text-xs font-medium text-gray-500 uppercase">
+											Host / IP
+										</label>
+										<input
+											class="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+											placeholder="e.g. 192.168.1.1 or vps.example.com"
+											value={sshHost()}
+											onInput={(e) => setSshHost(e.currentTarget.value)}
+										/>
+									</div>
+									<div class="space-y-1">
+										<label class="text-xs font-medium text-gray-500 uppercase">
+											Port
+										</label>
+										<input
+											class="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+											placeholder="22"
+											type="number"
+											value={sshPort()}
+											onInput={(e) =>
+												setSshPort(parseInt(e.currentTarget.value) || 22)
+											}
+										/>
+									</div>
+									<div class="space-y-1">
+										<label class="text-xs font-medium text-gray-500 uppercase">
+											Username
+										</label>
+										<input
+											class="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+											placeholder="root"
+											value={sshUser()}
+											onInput={(e) => setSshUser(e.currentTarget.value)}
+										/>
+									</div>
+									<div class="space-y-1">
+										<label class="text-xs font-medium text-gray-500 uppercase">
+											Password (Not Supported)
+										</label>
+										<input
+											class="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-sm cursor-not-allowed"
+											placeholder="Password auth not supported - Use Key File"
+											type="password"
+											disabled
+											value={sshPass()}
+											onInput={(e) => setSshPass(e.currentTarget.value)}
+										/>
+										<p class="text-[10px] text-orange-500">
+											Note: Password authentication is not supported. Please use a
+											Private Key file.
+										</p>
+									</div>
+									<div class="col-span-1 sm:col-span-2 space-y-1">
+										<label class="text-xs font-medium text-gray-500 uppercase">
+											Private Key File
+										</label>
+										<div class="flex gap-2">
+											<input
+												class="flex-1 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+												placeholder="/path/to/private_key"
+												value={sshKey()}
+												onInput={(e) => setSshKey(e.currentTarget.value)}
+											/>
+											<button
+												class="px-3 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-sm font-medium rounded-lg transition-colors"
+												onClick={handlePickKeyFile}
+											>
+												Browse
+											</button>
+										</div>
+									</div>
+									<div class="space-y-1">
+										<label class="text-xs font-medium text-gray-500 uppercase">
+											Remote Port (VPS)
+										</label>
+										<input
+											class="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+											placeholder="8317"
+											type="number"
+											value={sshRemote()}
+											onInput={(e) =>
+												setSshRemote(parseInt(e.currentTarget.value) || 0)
+											}
+										/>
+										<p class="text-[10px] text-gray-400">
+											Port to open on the remote server
+										</p>
+									</div>
+									<div class="space-y-1">
+										<label class="text-xs font-medium text-gray-500 uppercase">
+											Local Port (This App)
+										</label>
+										<input
+											class="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+											placeholder="8317"
+											type="number"
+											value={sshLocal()}
+											onInput={(e) =>
+												setSshLocal(parseInt(e.currentTarget.value) || 0)
+											}
+										/>
+										<p class="text-[10px] text-gray-400">
+											Port running locally (default 8317)
+										</p>
+									</div>
+								</div>
+								<div class="pt-2">
+									<Button
+										onClick={handleSaveSsh}
+										loading={sshAdding()}
+										variant="primary"
+										class="w-full sm:w-auto"
+									>
+										{sshId() ? "Update Connection" : "Add Connection"}
+									</Button>
+								</div>
+							</div>
+						</div>
+
+						{/* Cloudflare Tunnel Settings */}
+						<div
+							class="space-y-6"
+							classList={{ hidden: activeTab() !== "cloudflare" }}
+						>
+							<div class="flex items-center justify-between">
+								<div>
+									<h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+										Cloudflare Tunnel
+									</h2>
+									<p class="text-sm text-gray-500 dark:text-gray-400">
+										Expose your local API via Cloudflare Tunnel
+									</p>
+								</div>
+								<Button
+									onClick={() => {
+										setCfId("");
+										setCfName("");
+										setCfToken("");
+										setCfLocalPort(8317);
+										setCfAdding(true);
+									}}
+									variant="primary"
+									class="text-sm"
+								>
+									+ Add Tunnel
+								</Button>
+							</div>
+
+							{/* Existing Tunnels */}
+							<For each={config().cloudflareConfigs || []}>
+								{(cf) => {
+									const status = () => appStore.cloudflareStatus()[cf.id];
+									return (
+										<div class="p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+											<div class="flex items-center justify-between">
+												<div class="flex items-center gap-3">
+													<div
+														class={`w-3 h-3 rounded-full ${status()?.status === "connected"
+															? "bg-green-500"
+															: status()?.status === "connecting"
+																? "bg-yellow-500 animate-pulse"
+																: status()?.status === "error"
+																	? "bg-red-500"
+																	: "bg-gray-400"
+															}`}
+													/>
+													<div>
+														<p class="font-medium text-gray-900 dark:text-white">
+															{cf.name}
+														</p>
+														<p class="text-xs text-gray-500">
+															Port {cf.localPort} •{" "}
+															{status()?.message ||
+																(cf.enabled ? "Enabled" : "Disabled")}
+														</p>
+														<Show when={status()?.url}>
+															<p class="text-xs text-blue-500 mt-1">
+																{status()?.url}
+															</p>
+														</Show>
+													</div>
+												</div>
+												<div class="flex items-center gap-2">
+													<Switch
+														checked={cf.enabled}
+														onChange={(v) => handleToggleCf(cf.id, v)}
+													/>
+													<button
+														type="button"
+														onClick={() => handleEditCf(cf)}
+														class="p-2 text-gray-400 hover:text-blue-500 transition-colors"
+														title="Edit"
+													>
+														<svg
+															class="w-4 h-4"
+															fill="none"
+															viewBox="0 0 24 24"
+															stroke="currentColor"
+														>
+															<path
+																stroke-linecap="round"
+																stroke-linejoin="round"
+																stroke-width="2"
+																d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+															/>
+														</svg>
+													</button>
+													<button
+														type="button"
+														onClick={() => handleDeleteCf(cf.id)}
+														class="p-2 text-gray-400 hover:text-red-500 transition-colors"
+														title="Delete"
+													>
+														<svg
+															class="w-4 h-4"
+															fill="none"
+															viewBox="0 0 24 24"
+															stroke="currentColor"
+														>
+															<path
+																stroke-linecap="round"
+																stroke-linejoin="round"
+																stroke-width="2"
+																d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+															/>
+														</svg>
+													</button>
+												</div>
+											</div>
+										</div>
+									);
+								}}
+							</For>
+
+							{/* Add/Edit Form */}
+							<Show when={cfAdding()}>
+								<div class="p-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 space-y-4">
+									<div class="flex items-center justify-between">
+										<h3 class="font-medium text-blue-900 dark:text-blue-100">
+											{cfId() ? "Edit Tunnel" : "New Tunnel"}
+										</h3>
+										<button
+											type="button"
+											onClick={() => setCfAdding(false)}
+											class="text-gray-400 hover:text-gray-600"
+										>
+											<svg
+												class="w-5 h-5"
+												fill="none"
+												viewBox="0 0 24 24"
+												stroke="currentColor"
+											>
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													stroke-width="2"
+													d="M6 18L18 6M6 6l12 12"
+												/>
+											</svg>
+										</button>
+									</div>
+									<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+										<div class="space-y-1">
+											<label class="text-xs font-medium text-gray-500 uppercase">
+												Name
+											</label>
+											<input
+												class="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+												placeholder="My Tunnel"
+												value={cfName()}
+												onInput={(e) => setCfName(e.currentTarget.value)}
+											/>
+										</div>
+										<div class="space-y-1">
+											<label class="text-xs font-medium text-gray-500 uppercase">
+												Local Port (Reference)
+											</label>
+											<input
+												class="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+												placeholder="8317"
+												type="number"
+												value={cfLocalPort()}
+												onInput={(e) =>
+													setCfLocalPort(parseInt(e.currentTarget.value) || 8317)
+												}
+											/>
+											<p class="text-[10px] text-gray-400">
+												Configure actual port in Cloudflare dashboard
+											</p>
+										</div>
+									</div>
+									<div class="space-y-1">
+										<label class="text-xs font-medium text-gray-500 uppercase">
+											Tunnel Token
+										</label>
+										<input
+											class="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none"
+											placeholder="eyJ..."
+											type="password"
+											value={cfToken()}
+											onInput={(e) => setCfToken(e.currentTarget.value)}
+										/>
+										<p class="text-[10px] text-gray-400">
+											Get token from Cloudflare Zero Trust Dashboard → Access →
+											Tunnels
+										</p>
+									</div>
+									<div class="pt-2">
+										<Button
+											onClick={handleSaveCf}
+											variant="primary"
+											class="w-full sm:w-auto"
+										>
+											{cfId() ? "Update Tunnel" : "Add Tunnel"}
+										</Button>
+									</div>
+								</div>
+							</Show>
+
+							{/* Help Section */}
+							<div class="p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+								<h3 class="font-medium text-gray-900 dark:text-white mb-2">
+									How to set up Cloudflare Tunnel
+								</h3>
+								<ol class="text-sm text-gray-600 dark:text-gray-400 space-y-2 list-decimal list-inside">
+									<li>
+										Install{" "}
+										<code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">
+											cloudflared
+										</code>{" "}
+										on your system
+									</li>
+									<li>
+										Go to{" "}
+										<a
+											href="https://one.dash.cloudflare.com/"
+											target="_blank"
+											rel="noopener noreferrer"
+											class="text-blue-500 hover:underline"
+										>
+											Cloudflare Zero Trust Dashboard
+										</a>{" "}
+										→ Networks → Tunnels
+									</li>
+									<li>Create a new tunnel and copy the token</li>
+									<li>
+										<strong class="text-gray-900 dark:text-white">
+											Important:
+										</strong>{" "}
+										Configure a <strong>Public Hostname</strong> in the tunnel
+										settings:
+										<ul class="list-disc list-inside ml-4 mt-1 space-y-1">
+											<li>
+												Subdomain: your choice (e.g.,{" "}
+												<code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">
+													proxy
+												</code>
+												)
+											</li>
+											<li>Domain: select your domain</li>
+											<li>
+												Service Type:{" "}
+												<code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">
+													HTTP
+												</code>
+											</li>
+											<li>
+												URL:{" "}
+												<code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">
+													localhost:8317
+												</code>{" "}
+												(or your proxy port)
+											</li>
+										</ul>
+									</li>
+									<li>Paste the token above and enable the tunnel</li>
+								</ol>
+								<p class="mt-3 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 rounded-lg">
+									<strong>Note:</strong> The port routing is configured in the
+									Cloudflare dashboard, not in ProxyPal. The "Local Port" field
+									above is for reference only.
+								</p>
+							</div>
+						</div>
+
+						{/* Raw YAML Config Editor (Power Users) */}
+						<Show when={appStore.proxyStatus().running}>
+							<div
+								class="space-y-4"
+								classList={{ hidden: activeTab() !== "advanced" }}
+							>
+								<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+									Raw Configuration
+								</h2>
+
+								<div class="p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+									<button
+										type="button"
+										onClick={() => setYamlConfigExpanded(!yamlConfigExpanded())}
+										class="w-full flex items-center justify-between text-left"
+									>
+										<div>
+											<p class="text-sm font-medium text-gray-700 dark:text-gray-300">
+												YAML Config Editor
+											</p>
+											<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+												Advanced: Edit the raw CLIProxyAPI configuration
+											</p>
+										</div>
+										<svg
+											class={`w-5 h-5 text-gray-400 transition-transform ${yamlConfigExpanded() ? "rotate-180" : ""}`}
+											fill="none"
+											stroke="currentColor"
+											viewBox="0 0 24 24"
+										>
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												stroke-width="2"
+												d="M19 9l-7 7-7-7"
 											/>
 										</svg>
 									</button>
-								</div>
 
-								<div class="space-y-4">
-									<Show when={result().result.configPath}>
-										<div class="p-3 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
-											<div class="flex items-center gap-2 text-green-700 dark:text-green-300">
+									<Show when={yamlConfigExpanded()}>
+										<div class="mt-4 space-y-3">
+											<div class="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 rounded-lg">
 												<svg
-													class="w-4 h-4"
+													class="w-4 h-4 shrink-0"
 													fill="none"
-													stroke="currentColor"
 													viewBox="0 0 24 24"
+													stroke="currentColor"
 												>
 													<path
 														stroke-linecap="round"
 														stroke-linejoin="round"
 														stroke-width="2"
-														d="M5 13l4 4L19 7"
+														d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
 													/>
 												</svg>
-												<span class="text-sm font-medium">
-													Config file created
+												<span>
+													Be careful! Invalid YAML can break the proxy. Changes
+													apply immediately but some may require a restart.
 												</span>
 											</div>
-											<p class="mt-1 text-xs text-green-600 dark:text-green-400 font-mono break-all">
-												{result().result.configPath}
-											</p>
-										</div>
-									</Show>
 
-									<Show when={result().result.shellConfig}>
-										<div class="space-y-2">
-											<div class="flex items-center justify-between">
-												<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-													Environment Variables
-												</span>
-												<button
-													onClick={() => {
-														navigator.clipboard.writeText(
-															result().result.shellConfig!,
-														);
-														toastStore.success("Copied to clipboard");
-													}}
-													class="text-xs text-brand-500 hover:text-brand-600"
-												>
-													Copy
-												</button>
-											</div>
-											<pre class="p-3 rounded-lg bg-gray-100 dark:bg-gray-800 text-xs font-mono text-gray-700 dark:text-gray-300 overflow-x-auto whitespace-pre-wrap">
-												{result().result.shellConfig}
-											</pre>
-											<Button
-												size="sm"
-												variant="secondary"
-												onClick={handleApplyEnv}
-												class="w-full"
-											>
-												Add to Shell Profile Automatically
-											</Button>
-										</div>
-									</Show>
+											<Show when={loadingYaml()}>
+												<div class="text-center py-8 text-gray-500">
+													Loading configuration...
+												</div>
+											</Show>
 
-									<Show when={result().result.instructions}>
-										<div class="p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
-											<p class="text-sm text-blue-700 dark:text-blue-300">
-												{result().result.instructions}
-											</p>
+											<Show when={!loadingYaml()}>
+												<textarea
+													value={yamlContent()}
+													onInput={(e) => setYamlContent(e.currentTarget.value)}
+													class="w-full h-96 px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-mono focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth resize-y"
+													placeholder="Loading..."
+													spellcheck={false}
+												/>
+
+												<div class="flex items-center justify-between">
+													<Button
+														variant="secondary"
+														size="sm"
+														onClick={loadYamlConfig}
+														disabled={loadingYaml()}
+													>
+														<svg
+															class="w-4 h-4 mr-1.5"
+															fill="none"
+															stroke="currentColor"
+															viewBox="0 0 24 24"
+														>
+															<path
+																stroke-linecap="round"
+																stroke-linejoin="round"
+																stroke-width="2"
+																d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+															/>
+														</svg>
+														Reload
+													</Button>
+
+													<Button
+														variant="primary"
+														size="sm"
+														onClick={saveYamlConfig}
+														disabled={savingYaml() || loadingYaml()}
+													>
+														<Show
+															when={savingYaml()}
+															fallback={<span>Save Changes</span>}
+														>
+															<svg
+																class="w-4 h-4 animate-spin mr-1.5"
+																fill="none"
+																viewBox="0 0 24 24"
+															>
+																<circle
+																	class="opacity-25"
+																	cx="12"
+																	cy="12"
+																	r="10"
+																	stroke="currentColor"
+																	stroke-width="4"
+																/>
+																<path
+																	class="opacity-75"
+																	fill="currentColor"
+																	d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+																/>
+															</svg>
+															Saving...
+														</Show>
+													</Button>
+												</div>
+											</Show>
 										</div>
 									</Show>
 								</div>
+							</div>
+						</Show>
 
-								<div class="mt-6 flex justify-end">
+						{/* App Updates */}
+						<div
+							class="space-y-4"
+							classList={{ hidden: activeTab() !== "advanced" }}
+						>
+							<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+								App Updates
+							</h2>
+
+							<div class="space-y-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+								<div class="flex items-center justify-between">
+									<div class="flex-1">
+										<p class="text-sm font-medium text-gray-700 dark:text-gray-300">
+											Check for Updates
+										</p>
+										<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+											Download and install new versions automatically
+										</p>
+									</div>
 									<Button
-										variant="primary"
-										onClick={() => setConfigResult(null)}
+										variant="secondary"
+										size="sm"
+										onClick={handleCheckForUpdates}
+										disabled={checkingForUpdates() || installingUpdate()}
 									>
-										Done
+										<Show
+											when={checkingForUpdates()}
+											fallback={
+												<>
+													<svg
+														class="w-4 h-4 mr-1.5"
+														fill="none"
+														stroke="currentColor"
+														viewBox="0 0 24 24"
+													>
+														<path
+															stroke-linecap="round"
+															stroke-linejoin="round"
+															stroke-width="2"
+															d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+														/>
+													</svg>
+													Check
+												</>
+											}
+										>
+											<svg
+												class="w-4 h-4 animate-spin mr-1.5"
+												fill="none"
+												viewBox="0 0 24 24"
+											>
+												<circle
+													class="opacity-25"
+													cx="12"
+													cy="12"
+													r="10"
+													stroke="currentColor"
+													stroke-width="4"
+												/>
+												<path
+													class="opacity-75"
+													fill="currentColor"
+													d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+												/>
+											</svg>
+											Checking...
+										</Show>
 									</Button>
 								</div>
+
+								{/* Update available */}
+								<Show when={updateInfo()?.available}>
+									<div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+										<div class="flex items-start gap-3 p-3 bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 rounded-lg">
+											<svg
+												class="w-5 h-5 text-brand-500 mt-0.5 shrink-0"
+												fill="none"
+												stroke="currentColor"
+												viewBox="0 0 24 24"
+											>
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													stroke-width="2"
+													d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"
+												/>
+											</svg>
+											<div class="flex-1 min-w-0">
+												<p class="text-sm font-medium text-brand-700 dark:text-brand-300">
+													Update Available: v{updateInfo()?.version}
+												</p>
+												<p class="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
+													<svg
+														class="w-3.5 h-3.5"
+														fill="none"
+														stroke="currentColor"
+														viewBox="0 0 24 24"
+													>
+														<path
+															stroke-linecap="round"
+															stroke-linejoin="round"
+															stroke-width="2"
+															d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+														/>
+													</svg>
+													Please stop the proxy before updating to avoid issues
+												</p>
+												<Show when={updateInfo()?.body}>
+													<p class="text-xs text-brand-600 dark:text-brand-400 mt-1 line-clamp-3">
+														{updateInfo()?.body}
+													</p>
+												</Show>
+												<Show when={updateInfo()?.date}>
+													<p class="text-xs text-brand-500 dark:text-brand-500 mt-1">
+														Released: {updateInfo()?.date}
+													</p>
+												</Show>
+											</div>
+										</div>
+
+										{/* Install button */}
+										<div class="mt-3">
+											<Show
+												when={updaterSupport()?.supported !== false}
+												fallback={
+													<div class="text-center">
+														<p class="text-xs text-amber-600 dark:text-amber-400 mb-2">
+															{updaterSupport()?.reason}
+														</p>
+														<a
+															href="https://github.com/heyhuynhgiabuu/proxypal/releases"
+															target="_blank"
+															rel="noopener noreferrer"
+															class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-brand-500 hover:bg-brand-600 rounded-lg transition-colors"
+														>
+															<svg
+																class="w-4 h-4 mr-1.5"
+																fill="none"
+																stroke="currentColor"
+																viewBox="0 0 24 24"
+															>
+																<path
+																	stroke-linecap="round"
+																	stroke-linejoin="round"
+																	stroke-width="2"
+																	d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+																/>
+															</svg>
+															Download from GitHub
+														</a>
+													</div>
+												}
+											>
+												<Button
+													variant="primary"
+													size="sm"
+													onClick={handleInstallUpdate}
+													disabled={installingUpdate()}
+													class="w-full"
+												>
+													<Show
+														when={installingUpdate()}
+														fallback={
+															<>
+																<svg
+																	class="w-4 h-4 mr-1.5"
+																	fill="none"
+																	stroke="currentColor"
+																	viewBox="0 0 24 24"
+																>
+																	<path
+																		stroke-linecap="round"
+																		stroke-linejoin="round"
+																		stroke-width="2"
+																		d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+																	/>
+																</svg>
+																Download & Install
+															</>
+														}
+													>
+														<svg
+															class="w-4 h-4 animate-spin mr-1.5"
+															fill="none"
+															viewBox="0 0 24 24"
+														>
+															<circle
+																class="opacity-25"
+																cx="12"
+																cy="12"
+																r="10"
+																stroke="currentColor"
+																stroke-width="4"
+															/>
+															<path
+																class="opacity-75"
+																fill="currentColor"
+																d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+															/>
+														</svg>
+														{updateProgress()?.event === "Progress"
+															? "Downloading..."
+															: "Installing..."}
+													</Show>
+												</Button>
+											</Show>
+										</div>
+
+										{/* Progress indicator */}
+										<Show when={updateProgress()?.event === "Progress"}>
+											<div class="mt-2">
+												<div class="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+													<div
+														class="h-full bg-brand-500 transition-all duration-300"
+														style={{
+															width: `${(updateProgress()?.contentLength ?? 0) > 0 ? ((updateProgress()?.chunkLength ?? 0) / (updateProgress()?.contentLength ?? 1)) * 100 : 0}%`,
+														}}
+													/>
+												</div>
+											</div>
+										</Show>
+									</div>
+								</Show>
+
+								{/* Already up to date */}
+								<Show when={updateInfo() && !updateInfo()?.available}>
+									<div class="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+										<svg
+											class="w-5 h-5 text-green-500"
+											fill="none"
+											stroke="currentColor"
+											viewBox="0 0 24 24"
+										>
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												stroke-width="2"
+												d="M5 13l4 4L19 7"
+											/>
+										</svg>
+										<p class="text-sm text-green-700 dark:text-green-300">
+											You're running the latest version (v
+											{updateInfo()?.currentVersion})
+										</p>
+									</div>
+								</Show>
+							</div>
+						</div>
+
+						<div class="border-t border-gray-200 dark:border-gray-700 my-6" />
+
+						{/* Custom OpenAI-Compatible Providers */}
+						<div
+							class="space-y-4"
+							classList={{ hidden: activeTab() !== "models" }}
+						>
+							<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+								Available Models
+							</h2>
+							<ModelsWidget
+								models={models()}
+								loading={!appStore.proxyStatus().running}
+							/>
+						</div>
+
+						{/* CLI Agents */}
+						<div
+							class="space-y-4"
+							classList={{ hidden: activeTab() !== "models" }}
+						>
+							<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+								CLI Agents
+							</h2>
+							<div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 divide-y divide-gray-100 dark:divide-gray-700">
+								<For each={agents()}>
+									{(agent) => (
+										<div class="p-3 flex items-center justify-between">
+											<div class="flex items-center gap-3">
+												<Show when={agent.logo}>
+													<img
+														src={agent.logo}
+														alt={agent.name}
+														class="w-6 h-6 rounded"
+													/>
+												</Show>
+												<div>
+													<div class="flex items-center gap-2">
+														<span class="font-medium text-sm text-gray-900 dark:text-gray-100">
+															{agent.name}
+														</span>
+														<Show when={agent.configured}>
+															<span class="px-1.5 py-0.5 text-[10px] font-medium bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-300 rounded">
+																Configured
+															</span>
+														</Show>
+													</div>
+													<p class="text-xs text-gray-500 dark:text-gray-400">
+														{agent.description}
+													</p>
+												</div>
+											</div>
+											<Button
+												size="sm"
+												variant={agent.configured ? "secondary" : "primary"}
+												disabled={configuringAgent() === agent.id}
+												onClick={() => handleConfigureAgent(agent.id)}
+											>
+												<Show
+													when={configuringAgent() !== agent.id}
+													fallback={
+														<svg
+															class="w-4 h-4 animate-spin"
+															fill="none"
+															viewBox="0 0 24 24"
+														>
+															<circle
+																class="opacity-25"
+																cx="12"
+																cy="12"
+																r="10"
+																stroke="currentColor"
+																stroke-width="4"
+															/>
+															<path
+																class="opacity-75"
+																fill="currentColor"
+																d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+															/>
+														</svg>
+													}
+												>
+													{agent.configured ? "Reconfigure" : "Configure"}
+												</Show>
+											</Button>
+										</div>
+									)}
+								</For>
+								<Show when={agents().length === 0}>
+									<div class="p-4 text-center text-sm text-gray-500 dark:text-gray-400">
+										No CLI agents detected
+									</div>
+								</Show>
+							</div>
+						</div>
+
+						{/* About */}
+						<div
+							class="space-y-4"
+							classList={{ hidden: activeTab() !== "advanced" }}
+						>
+							<h2 class="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+								About
+							</h2>
+
+							<div class="p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 text-center">
+								<div class="w-12 h-12 mx-auto rounded-xl flex items-center justify-center mb-3">
+									<img
+										src={
+											themeStore.resolvedTheme() === "dark"
+												? "/proxypal-white.png"
+												: "/proxypal-black.png"
+										}
+										alt="ProxyPal Logo"
+										class="w-12 h-12 rounded-xl object-contain"
+									/>
+								</div>
+								<h3 class="font-bold text-gray-900 dark:text-gray-100">
+									ProxyPal
+								</h3>
+								<p class="text-sm text-gray-500 dark:text-gray-400">
+									Version {appVersion()}
+								</p>
+								<p class="text-xs text-gray-400 dark:text-gray-500 mt-2">
+									Built with love by OpenCodeKit
+								</p>
 							</div>
 						</div>
 					</div>
-				)}
-			</Show>
-		</div>
+				</main>
+				<Show when={configResult()}>
+					{(result) => (
+						<div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-fade-in">
+							<div class="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-lg animate-scale-in">
+								<div class="p-6">
+									<div class="flex items-center justify-between mb-4">
+										<h2 class="text-lg font-bold text-gray-900 dark:text-gray-100">
+											{result().agentName} Configured
+										</h2>
+										<button
+											onClick={() => setConfigResult(null)}
+											class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+										>
+											<svg
+												class="w-5 h-5"
+												fill="none"
+												stroke="currentColor"
+												viewBox="0 0 24 24"
+											>
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													stroke-width="2"
+													d="M6 18L18 6M6 6l12 12"
+												/>
+											</svg>
+										</button>
+									</div>
+
+									<div class="space-y-4">
+										<Show when={result().result.configPath}>
+											<div class="p-3 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+												<div class="flex items-center gap-2 text-green-700 dark:text-green-300">
+													<svg
+														class="w-4 h-4"
+														fill="none"
+														stroke="currentColor"
+														viewBox="0 0 24 24"
+													>
+														<path
+															stroke-linecap="round"
+															stroke-linejoin="round"
+															stroke-width="2"
+															d="M5 13l4 4L19 7"
+														/>
+													</svg>
+													<span class="text-sm font-medium">
+														Config file created
+													</span>
+												</div>
+												<p class="mt-1 text-xs text-green-600 dark:text-green-400 font-mono break-all">
+													{result().result.configPath}
+												</p>
+											</div>
+										</Show>
+
+										<Show when={result().result.shellConfig}>
+											<div class="space-y-2">
+												<div class="flex items-center justify-between">
+													<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+														Environment Variables
+													</span>
+													<button
+														onClick={() => {
+															navigator.clipboard.writeText(
+																result().result.shellConfig!,
+															);
+															toastStore.success("Copied to clipboard");
+														}}
+														class="text-xs text-brand-500 hover:text-brand-600"
+													>
+														Copy
+													</button>
+												</div>
+												<pre class="p-3 rounded-lg bg-gray-100 dark:bg-gray-800 text-xs font-mono text-gray-700 dark:text-gray-300 overflow-x-auto whitespace-pre-wrap">
+													{result().result.shellConfig}
+												</pre>
+												<Button
+													size="sm"
+													variant="secondary"
+													onClick={handleApplyEnv}
+													class="w-full"
+												>
+													Add to Shell Profile Automatically
+												</Button>
+											</div>
+										</Show>
+
+										<Show when={result().result.instructions}>
+											<div class="p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+												<p class="text-sm text-blue-700 dark:text-blue-300">
+													{result().result.instructions}
+												</p>
+											</div>
+										</Show>
+									</div>
+
+									<div class="mt-6 flex justify-end">
+										<Button
+											variant="primary"
+											onClick={() => setConfigResult(null)}
+										>
+											Done
+										</Button>
+									</div>
+								</div>
+							</div>
+						</div>
+					)}
+				</Show>
+			</div>
+
+			{/* Core Update Confirmation Modal */}
+			<ConfirmModal
+				open={showCoreUpdateConfirm()}
+				title="Update Core"
+				message={
+					<>
+						The proxy is currently running and will be stopped to install the update.
+						<br />
+						<span class="text-green-600 dark:text-green-400 font-medium">
+							It will restart automatically after the update.
+						</span>
+					</>
+				}
+				confirmText="Update Now"
+				cancelText="Cancel"
+				loading={installingCoreUpdate()}
+				onConfirm={handleCoreUpdateConfirm}
+				onCancel={handleCoreUpdateCancel}
+			/>
+		</>
 	);
 }
