@@ -7074,16 +7074,17 @@ async fn update_core(
     // Extract the archive
     extract_archive(&archive_path, &temp_dir, &archive_type)?;
     
-    // Find the binary in the extracted files
+    // Find the binary in the extracted files (check both naming conventions)
     #[cfg(target_os = "windows")]
-    let binary_name = "CLIProxyAPI.exe";
+    let binary_names = ["CLIProxyAPI.exe", "cli-proxy-api.exe"];
     #[cfg(not(target_os = "windows"))]
-    let binary_name = "CLIProxyAPI";
+    let binary_names = ["CLIProxyAPI", "cli-proxy-api"];
     
-    let extracted_binary = temp_dir.join(binary_name);
-    if !extracted_binary.exists() {
-        return Err(format!("Binary {} not found in extracted archive", binary_name));
-    }
+    let extracted_binary = binary_names
+        .iter()
+        .map(|name| temp_dir.join(name))
+        .find(|path| path.exists())
+        .ok_or_else(|| format!("Binary not found in extracted archive. Tried: {:?}", binary_names))?;
     
     // Get the target path for the sidecar
     let resource_dir = app

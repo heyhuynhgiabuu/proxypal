@@ -649,10 +649,13 @@ export function SettingsPage() {
 
 	// Install core (CLIProxyAPI) update
 	const handleInstallCoreUpdate = async () => {
+		// Track if proxy was running to restart after update
+		const wasRunning = appStore.proxyStatus().running;
+
 		// Warn user if proxy is running
-		if (appStore.proxyStatus().running) {
+		if (wasRunning) {
 			const confirmed = confirm(
-				"The proxy is currently running and will be stopped to install the update. Continue?",
+				"The proxy is currently running and will be stopped to install the update. It will restart automatically after the update. Continue?",
 			);
 			if (!confirmed) return;
 		}
@@ -667,12 +670,27 @@ export function SettingsPage() {
 				setCoreUpdateInfo((prev) =>
 					prev
 						? {
-								...prev,
-								currentVersion: result.version,
-								updateAvailable: false,
-							}
+							...prev,
+							currentVersion: result.version,
+							updateAvailable: false,
+						}
 						: null,
 				);
+
+				// Auto-restart proxy if it was running before the update
+				if (wasRunning) {
+					toastStore.info("Restarting proxy...");
+					try {
+						await startProxy();
+						toastStore.success("Proxy restarted successfully");
+					} catch (restartError) {
+						console.error("Failed to restart proxy:", restartError);
+						toastStore.warning(
+							"Update successful but failed to restart proxy",
+							"Please start the proxy manually",
+						);
+					}
+				}
 			} else {
 				toastStore.error(`Update failed: ${result.message}`);
 			}
@@ -2615,19 +2633,17 @@ export function SettingsPage() {
 											onClick={() =>
 												handleForceModelMappingsChange(!forceModelMappings())
 											}
-											class={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 disabled:opacity-50 ${
-												forceModelMappings()
+											class={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 disabled:opacity-50 ${forceModelMappings()
 													? "bg-brand-600"
 													: "bg-gray-200 dark:bg-gray-700"
-											}`}
+												}`}
 										>
 											<span
 												aria-hidden="true"
-												class={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-													forceModelMappings()
+												class={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${forceModelMappings()
 														? "translate-x-5"
 														: "translate-x-0"
-												}`}
+													}`}
 											/>
 										</button>
 									</div>
@@ -2706,11 +2722,10 @@ export function SettingsPage() {
 																			);
 																		}}
 																		disabled={!isEnabled()}
-																		class={`flex-1 min-w-0 px-2 py-1.5 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-lg text-xs focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth [&>option]:bg-white [&>option]:dark:bg-gray-900 [&>option]:text-gray-900 [&>option]:dark:text-gray-100 [&>optgroup]:bg-white [&>optgroup]:dark:bg-gray-900 [&>optgroup]:text-gray-900 [&>optgroup]:dark:text-gray-100 ${
-																			!isEnabled()
+																		class={`flex-1 min-w-0 px-2 py-1.5 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-lg text-xs focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth [&>option]:bg-white [&>option]:dark:bg-gray-900 [&>option]:text-gray-900 [&>option]:dark:text-gray-100 [&>optgroup]:bg-white [&>optgroup]:dark:bg-gray-900 [&>optgroup]:text-gray-900 [&>optgroup]:dark:text-gray-100 ${!isEnabled()
 																				? "opacity-50 cursor-not-allowed"
 																				: ""
-																		}`}
+																			}`}
 																	>
 																		<option value="">Select target...</option>
 																		<Show when={customModels.length > 0}>
@@ -2802,11 +2817,10 @@ export function SettingsPage() {
 																			!currentFork,
 																		);
 																	}}
-																	class={`shrink-0 px-2 py-1 text-xs rounded border transition-colors ${
-																		mapping()?.fork
+																	class={`shrink-0 px-2 py-1 text-xs rounded border transition-colors ${mapping()?.fork
 																			? "bg-amber-100 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300"
 																			: "bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
-																	}`}
+																		}`}
 																	title="Fork: Send request to both original and mapped model"
 																>
 																	Fork
@@ -2879,11 +2893,10 @@ export function SettingsPage() {
 																	);
 																}}
 																disabled={mapping.enabled === false}
-																class={`flex-1 min-w-0 px-2 py-1.5 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-lg text-xs focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth [&>option]:bg-white [&>option]:dark:bg-gray-900 [&>option]:text-gray-900 [&>option]:dark:text-gray-100 [&>optgroup]:bg-white [&>optgroup]:dark:bg-gray-900 [&>optgroup]:text-gray-900 [&>optgroup]:dark:text-gray-100 ${
-																	mapping.enabled === false
+																class={`flex-1 min-w-0 px-2 py-1.5 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-lg text-xs focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth [&>option]:bg-white [&>option]:dark:bg-gray-900 [&>option]:text-gray-900 [&>option]:dark:text-gray-100 [&>optgroup]:bg-white [&>optgroup]:dark:bg-gray-900 [&>optgroup]:text-gray-900 [&>optgroup]:dark:text-gray-100 ${mapping.enabled === false
 																		? "opacity-50 cursor-not-allowed"
 																		: ""
-																}`}
+																	}`}
 															>
 																<option value="">Select target...</option>
 																<Show when={customModels.length > 0}>
@@ -2969,11 +2982,10 @@ export function SettingsPage() {
 																			!mapping.fork,
 																		);
 																	}}
-																	class={`shrink-0 px-2 py-1 text-xs rounded border transition-colors ${
-																		mapping.fork
+																	class={`shrink-0 px-2 py-1 text-xs rounded border transition-colors ${mapping.fork
 																			? "bg-amber-100 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300"
 																			: "bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
-																	}`}
+																		}`}
 																	title="Fork: Send request to both original and mapped model"
 																>
 																	Fork
@@ -3511,11 +3523,10 @@ export function SettingsPage() {
 											<Show when={providerTestResult()}>
 												{(result) => (
 													<div
-														class={`flex items-center gap-2 p-2 rounded-lg text-xs ${
-															result().success
+														class={`flex items-center gap-2 p-2 rounded-lg text-xs ${result().success
 																? "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400"
 																: "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400"
-														}`}
+															}`}
 													>
 														<Show
 															when={result().success}
@@ -3727,17 +3738,15 @@ export function SettingsPage() {
 										aria-checked={websocketAuth()}
 										disabled={savingWebsocketAuth()}
 										onClick={() => handleWebsocketAuthChange(!websocketAuth())}
-										class={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 disabled:opacity-50 ${
-											websocketAuth()
+										class={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 disabled:opacity-50 ${websocketAuth()
 												? "bg-brand-600"
 												: "bg-gray-200 dark:bg-gray-700"
-										}`}
+											}`}
 									>
 										<span
 											aria-hidden="true"
-											class={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-												websocketAuth() ? "translate-x-5" : "translate-x-0"
-											}`}
+											class={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${websocketAuth() ? "translate-x-5" : "translate-x-0"
+												}`}
 										/>
 									</button>
 								</div>
@@ -4182,15 +4191,14 @@ export function SettingsPage() {
 											<div>
 												<p class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 flex items-center gap-2">
 													<span
-														class={`w-2 h-2 rounded-full ${
-															source.includes("copilot")
+														class={`w-2 h-2 rounded-full ${source.includes("copilot")
 																? "bg-purple-500"
 																: source.includes("claude")
 																	? "bg-orange-500"
 																	: source.includes("gemini")
 																		? "bg-blue-500"
 																		: "bg-green-500"
-														}`}
+															}`}
 													/>
 													{source
 														.replace(/-/g, " ")
@@ -4270,11 +4278,10 @@ export function SettingsPage() {
 												</div>
 												<Show when={statusProps().message}>
 													<div
-														class={`text-xs mt-1 break-all flex items-start gap-1 ${
-															statusProps().status === "error"
+														class={`text-xs mt-1 break-all flex items-start gap-1 ${statusProps().status === "error"
 																? "text-red-500"
 																: "text-gray-500"
-														}`}
+															}`}
 													>
 														<span class="opacity-75">&gt;</span>
 														<span>{statusProps().message}</span>
@@ -4284,16 +4291,15 @@ export function SettingsPage() {
 											<div class="flex items-center gap-4">
 												<div class="flex items-center gap-2">
 													<div
-														class={`w-2.5 h-2.5 rounded-full ${
-															statusProps().status === "connected"
+														class={`w-2.5 h-2.5 rounded-full ${statusProps().status === "connected"
 																? "bg-green-500"
 																: statusProps().status === "error"
 																	? "bg-red-500"
 																	: statusProps().status === "connecting" ||
-																			statusProps().status === "reconnecting"
+																		statusProps().status === "reconnecting"
 																		? "bg-orange-500 animate-pulse"
 																		: "bg-gray-400"
-														}`}
+															}`}
 													/>
 													<span class="text-sm font-medium text-gray-600 dark:text-gray-400 capitalize min-w-[50px]">
 														{statusProps().status}
@@ -4530,15 +4536,14 @@ export function SettingsPage() {
 										<div class="flex items-center justify-between">
 											<div class="flex items-center gap-3">
 												<div
-													class={`w-3 h-3 rounded-full ${
-														status()?.status === "connected"
+													class={`w-3 h-3 rounded-full ${status()?.status === "connected"
 															? "bg-green-500"
 															: status()?.status === "connecting"
 																? "bg-yellow-500 animate-pulse"
 																: status()?.status === "error"
 																	? "bg-red-500"
 																	: "bg-gray-400"
-													}`}
+														}`}
 												/>
 												<div>
 													<p class="font-medium text-gray-900 dark:text-white">

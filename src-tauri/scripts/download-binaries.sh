@@ -77,12 +77,17 @@ if [ -n "$BINARY_NAME" ]; then
 		tar -xzf "$ASSET_NAME"
 	fi
 
-	# Find and copy the binary
+	# Find and copy the binary (check both naming conventions)
 	if [ -f "CLIProxyAPI" ]; then
 		cp "CLIProxyAPI" "$BINARIES_DIR/$BINARY_NAME"
 		chmod +x "$BINARIES_DIR/$BINARY_NAME"
+	elif [ -f "cli-proxy-api" ]; then
+		cp "cli-proxy-api" "$BINARIES_DIR/$BINARY_NAME"
+		chmod +x "$BINARIES_DIR/$BINARY_NAME"
 	elif [ -f "CLIProxyAPI.exe" ]; then
 		cp "CLIProxyAPI.exe" "$BINARIES_DIR/$BINARY_NAME"
+	elif [ -f "cli-proxy-api.exe" ]; then
+		cp "cli-proxy-api.exe" "$BINARIES_DIR/$BINARY_NAME"
 	else
 		echo "Binary not found in archive"
 		ls -la
