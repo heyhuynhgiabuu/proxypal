@@ -98,8 +98,8 @@ export function BarChart(props: BarChartProps) {
 			},
 			grid: {
 				left: isHorizontal ? 120 : 40,
-				right: 20,
-				top: 20,
+				right: isHorizontal ? 80 : 20,
+				top: isHorizontal ? 20 : 40,
 				bottom: 20,
 				containLabel: false,
 			},
@@ -137,18 +137,25 @@ export function BarChart(props: BarChartProps) {
 			series: [
 				{
 					type: "bar",
-					data: props.colorByValue
-						? chartData.map((d) => ({
-								value: d.value,
-								itemStyle: {
-									color: getQuotaColor(d.value),
-								},
-							}))
-						: chartData.map((d) => d.value),
+					data: chartData.map((d) => {
+						const labelPosition = isHorizontal ? "right" : "top";
+						const item: any = {
+							value: d.value,
+							label: {
+								position: labelPosition,
+								color: "#333",
+							},
+						};
+						if (props.colorByValue) {
+							item.itemStyle = {
+								color: getQuotaColor(d.value),
+							};
+						}
+						return item;
+					}),
 					barWidth: "60%",
 					label: {
 						show: true,
-						position: "inside",
 						formatter: (params: unknown) => {
 							const p = params as { value?: number };
 							const val = p.value ?? 0;
@@ -156,9 +163,6 @@ export function BarChart(props: BarChartProps) {
 						},
 						fontSize: 11,
 						fontWeight: 500,
-						color: "#fff",
-						textShadowColor: "rgba(0,0,0,0.3)",
-						textShadowBlur: 2,
 					},
 					itemStyle: props.colorByValue
 						? { borderRadius: [4, 4, 4, 4] }

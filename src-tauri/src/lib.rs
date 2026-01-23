@@ -3570,6 +3570,19 @@ async fn fetch_antigravity_quota() -> Result<Vec<types::AntigravityQuotaResult>,
                         continue;
                     }
                 };
+
+                let project_id = match auth_json.get("project_id").and_then(|p| p.as_str()) {
+                    Some(p) => p.to_string(),
+                    None => {
+                        results.push(AntigravityQuotaResult {
+                            account_email: email,
+                            quotas: vec![],
+                            fetched_at: chrono::Local::now().to_rfc3339(),
+                            error: Some("No project_id found in auth file".to_string()),
+                        });
+                        continue;
+                    }
+                };
                 
                 // Fetch quota from Google API - try multiple endpoints with fallback
                 let base_urls = [
@@ -3588,7 +3601,7 @@ async fn fetch_antigravity_quota() -> Result<Vec<types::AntigravityQuotaResult>,
                         .header("Authorization", format!("Bearer {}", access_token))
                         .header("Content-Type", "application/json")
                         .header("User-Agent", "antigravity/1.104.0 darwin/arm64")
-                        .body("{}")
+                        .body(format!("{{\"project\": \"{}\"}}", project_id))
                         .timeout(std::time::Duration::from_secs(10))
                         .send()
                         .await;
@@ -3621,33 +3634,36 @@ async fn fetch_antigravity_quota() -> Result<Vec<types::AntigravityQuotaResult>,
                             // Parse models and extract quota info (HashMap format)
                             let mut quotas: Vec<ModelQuota> = Vec::new();
                             
-                            if let Some(models) = body.models {
-                                for (model_name, model_info) in models {
-                                    if let Some(quota_info) = model_info.quota_info {
-                                        if let Some(remaining) = quota_info.remaining_fraction {
-                                            // Map model names to display names
-                                            let display_name = match model_name.as_str() {
-                                                "gemini-2.5-pro" => "Gemini 2.5 Pro",
-                                                "gemini-2.5-flash" => "Gemini 2.5 Flash",
-                                                "gemini-2.0-flash" => "Gemini 2.0 Flash",
-                                                "gemini-2.0-flash-lite" => "Gemini 2.0 Flash Lite",
-                                                "gemini-exp-1206" => "Gemini Exp",
-                                                "claude-sonnet-4-5" | "claude-sonnet-4-5-thinking" => "Claude Sonnet 4.5",
-                                                "claude-opus-4-5" | "claude-opus-4-5-thinking" => "Claude Opus 4.5",
-                                                "imagen-3.0-generate-002" => "Imagen 3",
-                                                _ => &model_name,
-                                            }.to_string();
-                                            
-                                            quotas.push(ModelQuota {
-                                                model: model_name,
-                                                display_name,
-                                                remaining_percent: remaining * 100.0,
-                                                reset_time: quota_info.reset_time,
-                                            });
-                                        }
-                                    }
-                                }
-                            }
+                             if let Some(models) = body.models {
+                                 for (model_name, model_info) in models {
+                                     if let Some(quota_info) = model_info.quota_info {
+                                         // Include all models with quota_info, defaulting to 0% for those without remaining_fraction
+                                         let remaining_percent = quota_info.remaining_fraction
+                                             .map(|r| r * 100.0)
+                                             .unwrap_or(0.0);
+
+                                         // Map model names to display names
+                                         let display_name = match model_name.as_str() {
+                                             "gemini-2.5-pro" => "Gemini 2.5 Pro",
+                                             "gemini-2.5-flash" => "Gemini 2.5 Flash",
+                                             "gemini-2.0-flash" => "Gemini 2.0 Flash",
+                                             "gemini-2.0-flash-lite" => "Gemini 2.0 Flash Lite",
+                                             "gemini-exp-1206" => "Gemini Exp",
+                                             "claude-sonnet-4-5" | "claude-sonnet-4-5-thinking" => "Claude Sonnet 4.5",
+                                             "claude-opus-4-5" | "claude-opus-4-5-thinking" => "Claude Opus 4.5",
+                                             "imagen-3.0-generate-002" => "Imagen 3",
+                                             _ => &model_name,
+                                         }.to_string();
+
+                                         quotas.push(ModelQuota {
+                                             model: model_name,
+                                             display_name,
+                                             remaining_percent,
+                                             reset_time: quota_info.reset_time,
+                                         });
+                                     }
+                                 }
+                             }
                             
                             // Sort by model name for consistent display
                             quotas.sort_by(|a, b| a.display_name.cmp(&b.display_name));
