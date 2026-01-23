@@ -3174,7 +3174,7 @@ dependencies = [
 
 [[package]]
 name = "proxypal"
-version = "0.3.76"
+version = "0.3.77"
 dependencies = [
  "chrono",
  "dirs 5.0.1",

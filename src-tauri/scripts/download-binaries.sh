@@ -77,8 +77,8 @@ if [ -n "$BINARY_NAME" ]; then
 		tar -xzf "$ASSET_NAME"
 	fi
 
-	# Find the binary (it might be in a nested folder)
-	BINARY_FILE=$(find . -maxdepth 2 -name "CLIProxyAPI*" -type f \( -perm -u+x -o -name "*.exe" \) | head -n 1)
+	# Find the binary (it might be in a nested folder, or named differently)
+	BINARY_FILE=$(find . -maxdepth 2 \( -name "CLIProxyAPI*" -o -name "cli-proxy-api" -o -name "cli-proxy-api.exe" \) -type f \( -perm -u+x -o -name "*.exe" \) | head -n 1)
 
 	if [ -n "$BINARY_FILE" ]; then
 		cp "$BINARY_FILE" "$BINARIES_DIR/$BINARY_NAME"
