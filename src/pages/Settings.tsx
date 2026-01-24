@@ -101,8 +101,6 @@ const AMP_GPT_REASONING_LEVELS = [
 
 type AmpGptReasoningLevel = (typeof AMP_GPT_REASONING_LEVELS)[number];
 
-type AmpGptReasoningDisplayLevel = AmpGptReasoningLevel | "mixed";
-
 const AMP_GPT_SUFFIX_LEVEL_SET = new Set<AmpGptReasoningLevel>(
 	AMP_GPT_REASONING_LEVELS.filter(
 		(level) => level !== "none",
@@ -352,11 +350,38 @@ export function SettingsPage() {
 	const [reasoningEffortLevel, setReasoningEffortLevel] =
 		createSignal<ReasoningEffortLevel>("medium");
 	const [savingReasoningEffort, setSavingReasoningEffort] = createSignal(false);
+	const [savingSlotReasoningLevels, setSavingSlotReasoningLevels] = createSignal<Set<string>>(new Set());
 
-	// Amp GPT reasoning level (model suffix)
-	const [ampGptReasoningLevel, setAmpGptReasoningLevel] =
-		createSignal<AmpGptReasoningDisplayLevel>("none");
-	const [savingAmpGptReasoning, setSavingAmpGptReasoning] = createSignal(false);
+	// Compute uniform reasoning level from existing GPT mappings (both slots and custom)
+	// Returns: level if uniform, null if mixed, "none" if no GPT mappings
+	const uniformGptReasoningLevel = createMemo<AmpGptReasoningLevel | null>(
+		() => {
+			const modelSet = gptBaseModelSet();
+			if (modelSet.size === 0) return "none"; // No GPT models available
+			const mappings = config().ampModelMappings || [];
+
+			// Collect all enabled mappings that target GPT models (both slots and custom)
+			const gptMappings = mappings.filter((mapping) => {
+				if (mapping.enabled === false) return false;
+				const { base } = splitAmpGptReasoningAlias(mapping.alias, modelSet);
+				const { unprefixed } = splitModelPrefix(base);
+				return modelSet.has(unprefixed);
+			});
+
+			if (gptMappings.length === 0) return "none"; // No GPT mappings configured
+
+			let uniformLevel: AmpGptReasoningLevel | null = null;
+			for (const mapping of gptMappings) {
+				const { level } = splitAmpGptReasoningAlias(mapping.alias, modelSet);
+				if (uniformLevel === null) {
+					uniformLevel = level;
+				} else if (uniformLevel !== level) {
+					return null; // Mixed levels
+				}
+			}
+			return uniformLevel;
+		},
+	);
 
 	// Management API runtime settings
 	const [maxRetryInterval, setMaxRetryIntervalState] = createSignal<number>(0);
@@ -789,29 +814,7 @@ export function SettingsPage() {
 		}
 	});
 
-	createEffect(() => {
-		const modelSet = gptBaseModelSet();
-		const mappingLevels = (config().ampModelMappings || [])
-			.filter((mapping) => mapping.enabled !== false)
-			.map((mapping) => {
-				const { base, level } = splitAmpGptReasoningAlias(
-					mapping.alias,
-					modelSet,
-				);
-				const { unprefixed } = splitModelPrefix(base);
-				return modelSet.has(unprefixed) ? level : null;
-			})
-			.filter((level): level is AmpGptReasoningLevel => level !== null);
 
-		if (mappingLevels.length === 0) {
-			setAmpGptReasoningLevel("none");
-			return;
-		}
-
-		const [firstLevel] = mappingLevels;
-		const isMixed = mappingLevels.some((level) => level !== firstLevel);
-		setAmpGptReasoningLevel(isMixed ? "mixed" : firstLevel);
-	});
 
 	// Handler for max retry interval change
 	const handleMaxRetryIntervalChange = async (value: number) => {
@@ -1229,56 +1232,98 @@ export function SettingsPage() {
 		}
 	};
 
-	const saveAmpGptReasoningLevel = async () => {
-		const level = ampGptReasoningLevel();
-		if (level === "mixed") {
+	// Update a single slot's reasoning level
+	const updateSlotReasoningLevel = async (
+		slotId: string,
+		level: AmpGptReasoningLevel,
+	) => {
+		// Guard against overlapping saves for the same slot
+		if (savingSlotReasoningLevels().has(slotId)) return;
+
+		const modelSet = gptBaseModelSet();
+		const slot = AMP_MODEL_SLOTS.find((s) => s.id === slotId);
+		if (!slot) return;
+
+		// Capture original alias for this slot before any changes
+		const originalMappings = config().ampModelMappings || [];
+		const originalMapping = originalMappings.find(
+			(m) => m.name === slot.fromModel,
+		);
+		const originalAlias = originalMapping?.alias;
+
+		// Helper to compute updated mappings from current config
+		const computeUpdatedConfig = () => {
+			const currentMappings = config().ampModelMappings || [];
+			const existingMapping = currentMappings.find(
+				(m) => m.name === slot.fromModel,
+			);
+			if (!existingMapping) return null;
+
+			const nextAlias = applyAmpGptReasoningLevel(
+				existingMapping.alias,
+				level,
+				modelSet,
+			);
+
+			if (nextAlias === existingMapping.alias) return null;
+
+			const newMappings = currentMappings.map((m) =>
+				m.name === slot.fromModel ? { ...m, alias: nextAlias } : m,
+			);
+			return { config: { ...config(), ampModelMappings: newMappings }, newAlias: nextAlias };
+		};
+
+		const result = computeUpdatedConfig();
+		if (!result) return;
+
+		const { config: initialNewConfig, newAlias } = result;
+
+		// Update UI immediately to prevent race conditions with rapid changes
+		setConfig(initialNewConfig);
+		setSavingSlotReasoningLevels((prev) => new Set(prev).add(slotId));
+
+		try {
+			// Save the CURRENT config state to include any concurrent changes
+			await saveConfig(config());
+		} catch (error) {
+			// Revert only if the current alias still matches what we tried to save
+			// (i.e., user hasn't made other changes to this slot while save was in flight)
+			const currentMappings = config().ampModelMappings || [];
+			const currentMapping = currentMappings.find(
+				(m) => m.name === slot.fromModel,
+			);
+			if (
+				originalAlias !== undefined &&
+				currentMapping?.alias === newAlias
+			) {
+				const revertedMappings = currentMappings.map((m) =>
+					m.name === slot.fromModel ? { ...m, alias: originalAlias } : m,
+				);
+				setConfig({ ...config(), ampModelMappings: revertedMappings });
+			}
 			toastStore.error(
-				"Amp GPT reasoning level is mixed. Align mappings to update.",
+				`Failed to update reasoning level: ${error instanceof Error ? error.message : String(error)}`,
 			);
 			return;
+		} finally {
+			setSavingSlotReasoningLevels((prev) => {
+				const next = new Set(prev);
+				next.delete(slotId);
+				return next;
+			});
 		}
 
-		setSavingAmpGptReasoning(true);
-		try {
-			const modelSet = gptBaseModelSet();
-			const currentMappings = config().ampModelMappings || [];
-			const newMappings = currentMappings.map((mapping) => {
-				const { base } = splitAmpGptReasoningAlias(mapping.alias, modelSet);
-				const { unprefixed } = splitModelPrefix(base);
-				if (!modelSet.has(unprefixed)) {
-					return mapping;
-				}
-				const nextAlias = applyAmpGptReasoningLevel(
-					mapping.alias,
-					level,
-					modelSet,
-				);
-				return nextAlias === mapping.alias
-					? mapping
-					: { ...mapping, alias: nextAlias };
-			});
-
-			const newConfig = { ...config(), ampModelMappings: newMappings };
-			setConfig(newConfig);
-			await saveConfig(newConfig);
-
-			if (appStore.proxyStatus().running) {
+		// Proxy restart is separate - config is already persisted
+		if (appStore.proxyStatus().running) {
+			try {
 				await stopProxy();
 				await new Promise((resolve) => setTimeout(resolve, 300));
 				await startProxy();
+			} catch (error) {
+				toastStore.error(
+					`Reasoning level saved but proxy restart failed: ${error instanceof Error ? error.message : String(error)}`,
+				);
 			}
-
-			setAmpGptReasoningLevel(level);
-			toastStore.success(
-				level === "none"
-					? "Amp GPT reasoning suffix cleared"
-					: `Amp GPT reasoning set to "${level}"`,
-			);
-		} catch (error) {
-			console.error("Failed to save Amp GPT reasoning:", error);
-			toastStore.error("Failed to save Amp GPT reasoning", String(error));
-		} finally {
-			setSavingAmpGptReasoning(false);
 		}
 	};
 
@@ -2447,75 +2492,6 @@ export function SettingsPage() {
 									</p>
 								</div>
 
-								<Show when={gptBaseModels().length > 0}>
-									<div class="p-3 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700">
-										<div class="flex items-start justify-between gap-3">
-											<div class="flex-1">
-												<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-													Amp GPT Reasoning Level
-												</span>
-												<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-													Applies model suffix like gpt-5(high) to Amp mappings
-													that target GPT-5.
-												</p>
-											</div>
-										</div>
-
-										<div class="mt-3 space-y-2">
-											<label class="block">
-												<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-													Default Level
-												</span>
-												<select
-													value={ampGptReasoningLevel()}
-													onChange={(e) =>
-														setAmpGptReasoningLevel(
-															e.currentTarget
-																.value as AmpGptReasoningDisplayLevel,
-														)
-													}
-													class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-smooth [&>option]:bg-white [&>option]:dark:bg-gray-900 [&>option]:text-gray-900 [&>option]:dark:text-gray-100"
-												>
-													<option value="none">None (no suffix)</option>
-													<option value="minimal">Minimal</option>
-													<option value="low">Low</option>
-													<option value="medium">Medium</option>
-													<option value="high">High</option>
-													<option value="xhigh">Extra High</option>
-													<Show when={ampGptReasoningLevel() === "mixed"}>
-														<option value="mixed">Mixed</option>
-													</Show>
-												</select>
-											</label>
-
-											<div class="flex items-center justify-between pt-1">
-												<span class="text-xs text-gray-500 dark:text-gray-400">
-													Current:{" "}
-													<span class="font-medium text-brand-600 dark:text-brand-400">
-														{ampGptReasoningLevel()}
-													</span>
-												</span>
-												<Button
-													variant="primary"
-													size="sm"
-													onClick={saveAmpGptReasoningLevel}
-													disabled={
-														savingAmpGptReasoning() ||
-														ampGptReasoningLevel() === "mixed"
-													}
-												>
-													{savingAmpGptReasoning() ? "Saving..." : "Apply"}
-												</Button>
-											</div>
-											<Show when={ampGptReasoningLevel() === "mixed"}>
-												<p class="text-xs text-amber-600 dark:text-amber-400 mt-1">
-													Mappings currently use multiple reasoning suffixes.
-												</p>
-											</Show>
-										</div>
-									</div>
-								</Show>
-
 								{/* Prioritize Model Mappings Toggle */}
 								<Show when={appStore.proxyStatus().running}>
 									<div class="flex items-center justify-between p-3 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700">
@@ -2582,7 +2558,10 @@ export function SettingsPage() {
 									<For each={AMP_MODEL_SLOTS}>
 										{(slot) => {
 											const mapping = () => getMappingForSlot(slot.id);
-											const isEnabled = () => !!mapping();
+											const isEnabled = () => {
+												const m = mapping();
+												return !!m && m.enabled !== false;
+											};
 											const currentTargetAlias = () => mapping()?.alias || "";
 											// Strip reasoning suffix for dropdown matching (base model only)
 											const currentTargetBase = () =>
@@ -2590,6 +2569,18 @@ export function SettingsPage() {
 													currentTargetAlias(),
 													gptBaseModelSet(),
 												).base || "";
+											// Get current reasoning level for this slot
+											const currentReasoningLevel = () =>
+												splitAmpGptReasoningAlias(
+													currentTargetAlias(),
+													gptBaseModelSet(),
+												).level;
+											// Check if current target is a GPT model
+											const isGptTarget = () => {
+												const base = currentTargetBase();
+												const { unprefixed } = splitModelPrefix(base);
+												return gptBaseModelSet().has(unprefixed);
+											};
 
 											return (
 												<div class="p-3 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700">
@@ -2609,17 +2600,13 @@ export function SettingsPage() {
 																			customModels[0]?.value ||
 																			builtInModels.google[0]?.value ||
 																			slot.fromModel;
-																		// Apply current reasoning level suffix to GPT base models
-																		const uiLevel = ampGptReasoningLevel();
-																		const levelToApply =
-																			uiLevel === "mixed"
-																				? ("none" as AmpGptReasoningLevel)
-																				: (uiLevel as AmpGptReasoningLevel);
+																		// Use uniform reasoning level for new slots (or "none" if mixed)
+																		const effectiveLevel = uniformGptReasoningLevel() ?? "none";
 																		updateSlotMapping(
 																			slot.id,
 																			applyAmpGptReasoningLevel(
 																				defaultTarget,
-																				levelToApply,
+																				effectiveLevel,
 																				gptBaseModelSet(),
 																			),
 																			true,
@@ -2660,19 +2647,11 @@ export function SettingsPage() {
 																		onChange={(e) => {
 																			const newTargetBase =
 																				e.currentTarget.value;
-																			// Apply current reasoning level suffix to GPT base models
-																			const uiLevel = ampGptReasoningLevel();
-																			const levelToApply =
-																				uiLevel === "mixed"
-																					? splitAmpGptReasoningAlias(
-																							currentTargetAlias(),
-																							gptBaseModelSet(),
-																						).level
-																					: (uiLevel as AmpGptReasoningLevel);
+																			// Preserve current slot's reasoning level when changing target model
 																			const nextAlias =
 																				applyAmpGptReasoningLevel(
 																					newTargetBase,
-																					levelToApply,
+																					currentReasoningLevel(),
 																					gptBaseModelSet(),
 																				);
 																			updateSlotMapping(
@@ -2788,6 +2767,28 @@ export function SettingsPage() {
 																	Fork
 																</button>
 															</Show>
+
+															{/* Per-slot reasoning dropdown - only show when target is GPT */}
+																<Show when={isEnabled() && isGptTarget()}>
+																	<select
+																		value={currentReasoningLevel()}
+																		onChange={(e) => {
+																			const level = e.currentTarget
+																				.value as AmpGptReasoningLevel;
+																			updateSlotReasoningLevel(slot.id, level);
+																		}}
+																		disabled={savingSlotReasoningLevels().has(slot.id)}
+																		class={`shrink-0 px-2 py-1 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700/50 rounded text-xs font-medium min-w-[70px] [&>option]:bg-white [&>option]:dark:bg-gray-800 [&>option]:text-gray-900 [&>option]:dark:text-gray-100 ${savingSlotReasoningLevels().has(slot.id) ? "opacity-50 cursor-not-allowed" : ""}`}
+																		title="GPT reasoning level for this slot"
+																	>
+																	<option value="none">None</option>
+																	<option value="minimal">Min</option>
+																	<option value="low">Low</option>
+																	<option value="medium">Med</option>
+																	<option value="high">High</option>
+																	<option value="xhigh">xHigh</option>
+																</select>
+															</Show>
 														</div>
 													</div>
 												</div>
@@ -2854,18 +2855,14 @@ export function SettingsPage() {
 																}
 																onChange={(e) => {
 																	const newTargetBase = e.currentTarget.value;
-																	// Apply current reasoning level suffix to GPT base models
-																	const uiLevel = ampGptReasoningLevel();
-																	const levelToApply =
-																		uiLevel === "mixed"
-																			? splitAmpGptReasoningAlias(
-																					mapping.alias,
-																					gptBaseModelSet(),
-																				).level
-																			: (uiLevel as AmpGptReasoningLevel);
+																	// Preserve current mapping's reasoning level
+																	const currentLevel = splitAmpGptReasoningAlias(
+																		mapping.alias,
+																		gptBaseModelSet(),
+																	).level;
 																	const nextAlias = applyAmpGptReasoningLevel(
 																		newTargetBase,
-																		levelToApply,
+																		currentLevel,
 																		gptBaseModelSet(),
 																	);
 																	updateCustomMapping(
