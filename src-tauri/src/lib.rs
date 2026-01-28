@@ -875,7 +875,7 @@ async fn start_proxy(
         let mut section = String::from("# Gemini API keys\ngemini-api-key:\n");
         for key in &config.gemini_api_keys {
             section.push_str(&format!("  - api-key: \"{}\"\n", key.api_key));
-            section.push_str("    signature-cache: true\n");
+            section.push_str("    signature-cache: false\n");
             if let Some(ref base_url) = key.base_url {
                 section.push_str(&format!("    base-url: \"{}\"\n", base_url));
             }
@@ -3090,6 +3090,16 @@ async fn get_oauth_url(state: State<'_, AppState>, provider: String) -> Result<O
         config.port
     };
 
+    // Kiro uses a web UI page directly, not a JSON API endpoint
+    // Return the URL directly without making an HTTP request
+    if provider == "kiro" {
+        let kiro_url = format!("http://127.0.0.1:{}/v0/oauth/kiro", port);
+        return Ok(OAuthUrlResponse {
+            url: kiro_url,
+            state: String::new(),
+        });
+    }
+
     // Get the OAuth URL from CLIProxyAPI's Management API
     // Add is_webui=true to use the embedded callback forwarder
     // Use 127.0.0.1 consistently (not localhost) to avoid access control issues
@@ -3099,7 +3109,6 @@ async fn get_oauth_url(state: State<'_, AppState>, provider: String) -> Result<O
         "gemini" => format!("http://127.0.0.1:{}/v0/management/gemini-cli-auth-url?is_webui=true", port),
         "qwen" => format!("http://127.0.0.1:{}/v0/management/qwen-auth-url?is_webui=true", port),
         "iflow" => format!("http://127.0.0.1:{}/v0/management/iflow-auth-url?is_webui=true", port),
-        "kiro" => format!("http://127.0.0.1:{}/v0/management/kiro-auth-url?is_webui=true", port),
         "antigravity" => format!("http://127.0.0.1:{}/v0/management/antigravity-auth-url?is_webui=true", port),
         "vertex" => return Err("Vertex uses service account import, not OAuth. Use import_vertex_credential instead.".to_string()),
         _ => return Err(format!("Unknown provider: {}", provider)),
@@ -3166,6 +3175,15 @@ async fn open_oauth(app: tauri::AppHandle, state: State<'_, AppState>, provider:
         config.port
     };
 
+    // For Kiro, open the Web OAuth UI directly in CLIProxyAPIPlus
+    if provider == "kiro" {
+        let oauth_url = format!("http://127.0.0.1:{}/v0/oauth/kiro", port);
+        app.opener()
+            .open_url(&oauth_url, None::<&str>)
+            .map_err(|e| format!("Failed to open URL: {}", e))?;
+        return Ok(String::new()); // No specific state needed for direct Web UI
+    }
+
     // Get the OAuth URL from CLIProxyAPI's Management API
     // Add is_webui=true to use the embedded callback forwarder
     // Use 127.0.0.1 consistently (not localhost) to avoid access control issues
@@ -3175,9 +3193,9 @@ async fn open_oauth(app: tauri::AppHandle, state: State<'_, AppState>, provider:
         "gemini" => format!("http://127.0.0.1:{}/v0/management/gemini-cli-auth-url?is_webui=true", port),
         "qwen" => format!("http://127.0.0.1:{}/v0/management/qwen-auth-url?is_webui=true", port),
         "iflow" => format!("http://127.0.0.1:{}/v0/management/iflow-auth-url?is_webui=true", port),
-        "kiro" => format!("http://127.0.0.1:{}/v0/management/kiro-auth-url?is_webui=true", port),
         "antigravity" => format!("http://127.0.0.1:{}/v0/management/antigravity-auth-url?is_webui=true", port),
         "vertex" => return Err("Vertex uses service account import, not OAuth. Use import_vertex_credential instead.".to_string()),
+        // Note: Kiro is handled above with direct Web UI
         _ => return Err(format!("Unknown provider: {}", provider)),
     };
 
@@ -6981,37 +6999,74 @@ async fn delete_auth_file(state: State<'_, AppState>, file_id: String) -> Result
 }
 
 // Toggle auth file enabled/disabled via management API (CLIProxyAPI v6.7.18+)
+// Fallback: manually rename file to .json.disabled if API returns 404
 #[tauri::command]
-async fn toggle_auth_file(state: State<'_, AppState>, file_name: String, disabled: bool) -> Result<(), String> {
-    let port = {
-        let config = state.config.lock().unwrap();
-        config.port
-    };
-    
-    // Use the new PATCH endpoint from CLIProxyAPI v6.7.18
-    // Endpoint: PATCH /v0/management/auth-files/status
-    // Body: { "name": "filename.json", "disabled": true/false }
-    let url = get_management_url(port, "auth-files/status");
-    
-    let client = build_management_client();
-    let response = client
-        .patch(&url)
-        .header("X-Management-Key", &get_management_key())
-        .json(&serde_json::json!({
-            "name": file_name,
-            "disabled": disabled
-        }))
-        .send()
-        .await
-        .map_err(|e| format!("Failed to toggle auth file: {}", e))?;
-    
-    if !response.status().is_success() {
-        let status = response.status();
-        let error_text = response.text().await.unwrap_or_default();
-        return Err(format!("Failed to toggle auth file: {} - {}", status, error_text));
-    }
-    
-    Ok(())
+async fn toggle_auth_file(
+	state: State<'_, AppState>,
+	file_name: String,
+	disabled: bool,
+) -> Result<(), String> {
+	let port = {
+		let config = state.config.lock().unwrap();
+		config.port
+	};
+
+	// Use the new PATCH endpoint from CLIProxyAPI v6.7.18
+	// Endpoint: PATCH /v0/management/auth-files/status
+	// Body: { "name": "filename.json", "disabled": true/false }
+	let url = get_management_url(port, "auth-files/status");
+
+	let client = build_management_client();
+	let response_res = client
+		.patch(&url)
+		.header("X-Management-Key", &get_management_key())
+		.json(&serde_json::json!({
+			"name": file_name,
+			"disabled": disabled
+		}))
+		.send()
+		.await;
+
+	match response_res {
+		Ok(response) if response.status().is_success() => Ok(()),
+		Ok(response) if response.status().as_u16() == 404 => {
+			// API not found (old version), fallback to manual file renaming
+			let home_dir = dirs::home_dir().ok_or("Could not find home directory")?;
+			let auth_dir = home_dir.join(".cli-proxy-api");
+
+			let current_name = if !disabled {
+				format!("{}.disabled", file_name)
+			} else {
+				file_name.clone()
+			};
+
+			let new_name = if disabled {
+				format!("{}.disabled", file_name)
+			} else {
+				file_name.clone()
+			};
+
+			let current_path = auth_dir.join(&current_name);
+			let new_path = auth_dir.join(&new_name);
+
+			if current_path.exists() {
+				std::fs::rename(&current_path, &new_path)
+					.map_err(|e| format!("Manual toggle failed: {}", e))?;
+				Ok(())
+			} else {
+				Err(format!("Auth file not found: {:?}", current_path))
+			}
+		}
+		Ok(response) => {
+			let status = response.status();
+			let error_text = response.text().await.unwrap_or_default();
+			Err(format!(
+				"Failed to toggle auth file: {} - {}",
+				status, error_text
+			))
+		}
+		Err(e) => Err(format!("Failed to toggle auth file: {}", e)),
+	}
 }
 
 // Download auth file - returns path to temp file

@@ -10,7 +10,7 @@ if (-not (Test-Path $BinariesDir)) {
     New-Item -ItemType Directory -Force -Path $BinariesDir | Out-Null
 }
 
-$Repo = "router-for-me/CLIProxyAPI"
+$Repo = "router-for-me/CLIProxyAPIPlus"
 # Fetch latest version (no fallback - must succeed)
 try {
     $LatestRelease = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest"
@@ -24,15 +24,15 @@ if ([string]::IsNullOrEmpty($Version)) {
     Write-Error "Error: Fetched version is empty from $Repo"
     exit 1
 }
-Write-Host "Using CLIProxyAPI version: $Version"
+Write-Host "Using CLIProxyAPIPlus version: $Version"
 
 # Determine Asset and ArchiveType based on BinaryName
 $AssetName = ""
 
 if ($BinaryName -match "x86_64-pc-windows-msvc") {
-    $AssetName = "CLIProxyAPI_${Version}_windows_amd64.zip"
+    $AssetName = "CLIProxyAPIPlus_${Version}_windows_amd64.zip"
 } elseif ($BinaryName -match "aarch64-pc-windows-msvc") {
-    $AssetName = "CLIProxyAPI_${Version}_windows_arm64.zip"
+    $AssetName = "CLIProxyAPIPlus_${Version}_windows_arm64.zip"
 } else {
     Write-Warning "Unknown target or not supported in this PS script: $BinaryName"
     exit 1
@@ -53,7 +53,7 @@ try {
 
     $DestPath = Join-Path $BinariesDir $BinaryName
     $CandidateExes = Get-ChildItem -Path $TempDir -Recurse -Filter *.exe | Where-Object {
-        $_.Name -match "CLIProxyAPI|cliproxyapi|cli-proxy-api"
+        $_.Name -match "CLIProxyAPIPlus|CLIProxyAPI|cliproxyapi|cli-proxy-api"
     }
 
     if (-not $CandidateExes -or $CandidateExes.Count -eq 0) {

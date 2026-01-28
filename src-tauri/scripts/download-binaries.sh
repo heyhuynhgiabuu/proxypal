@@ -7,8 +7,8 @@ BINARY_NAME="${1:-}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BINARIES_DIR="$SCRIPT_DIR/../binaries"
 
-# Use patched fork until upstream merges fixes (#730, #731, #732)
-CLIPROXYAPI_REPO="${CLIPROXYAPI_REPO:-router-for-me/CLIProxyAPI}"
+# Use CLIProxyAPIPlus for Kiro OAuth support
+CLIPROXYAPI_REPO="${CLIPROXYAPI_REPO:-router-for-me/CLIProxyAPIPlus}"
 
 # Get latest version from GitHub API
 VERSION=$(curl -s "https://api.github.com/repos/${CLIPROXYAPI_REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"v?([^"]+)".*/\1/')
@@ -18,27 +18,27 @@ if [ -z "$VERSION" ]; then
 fi
 echo "Using CLIProxyAPI version: $VERSION"
 
-# Map Tauri target to CLIProxyAPI asset name (bash 3 compatible - no associative arrays)
+# Map Tauri target to CLIProxyAPIPlus asset name (bash 3 compatible - no associative arrays)
 get_asset_info() {
 	local target="$1"
 	case "$target" in
 	cli-proxy-api-aarch64-apple-darwin | cliproxyapi-aarch64-apple-darwin)
-		echo "CLIProxyAPI_${VERSION}_darwin_arm64.tar.gz|tar"
+		echo "CLIProxyAPIPlus_${VERSION}_darwin_arm64.tar.gz|tar"
 		;;
 	cli-proxy-api-x86_64-apple-darwin | cliproxyapi-x86_64-apple-darwin)
-		echo "CLIProxyAPI_${VERSION}_darwin_amd64.tar.gz|tar"
+		echo "CLIProxyAPIPlus_${VERSION}_darwin_amd64.tar.gz|tar"
 		;;
 	cli-proxy-api-x86_64-unknown-linux-gnu | cliproxyapi-x86_64-unknown-linux-gnu)
-		echo "CLIProxyAPI_${VERSION}_linux_amd64.tar.gz|tar"
+		echo "CLIProxyAPIPlus_${VERSION}_linux_amd64.tar.gz|tar"
 		;;
 	cli-proxy-api-aarch64-unknown-linux-gnu | cliproxyapi-aarch64-unknown-linux-gnu)
-		echo "CLIProxyAPI_${VERSION}_linux_arm64.tar.gz|tar"
+		echo "CLIProxyAPIPlus_${VERSION}_linux_arm64.tar.gz|tar"
 		;;
 	cli-proxy-api-x86_64-pc-windows-msvc.exe | cliproxyapi-x86_64-pc-windows-msvc.exe)
-		echo "CLIProxyAPI_${VERSION}_windows_amd64.zip|zip"
+		echo "CLIProxyAPIPlus_${VERSION}_windows_amd64.zip|zip"
 		;;
 	cli-proxy-api-aarch64-pc-windows-msvc.exe | cliproxyapi-aarch64-pc-windows-msvc.exe)
-		echo "CLIProxyAPI_${VERSION}_windows_arm64.zip|zip"
+		echo "CLIProxyAPIPlus_${VERSION}_windows_arm64.zip|zip"
 		;;
 	*)
 		echo ""
@@ -78,7 +78,7 @@ if [ -n "$BINARY_NAME" ]; then
 	fi
 
 	# Find the binary (it might be in a nested folder, or named differently)
-	BINARY_FILE=$(find . -maxdepth 2 \( -name "CLIProxyAPI*" -o -name "cli-proxy-api" -o -name "cli-proxy-api.exe" \) -type f \( -perm -u+x -o -name "*.exe" \) | head -n 1)
+	BINARY_FILE=$(find . -maxdepth 2 \( -name "cli-proxy-api-plus*" -o -name "CLIProxyAPIPlus*" -o -name "CLIProxyAPI*" -o -name "cli-proxy-api" -o -name "cli-proxy-api.exe" \) -type f \( -perm -u+x -o -name "*.exe" \) | head -n 1)
 
 	if [ -n "$BINARY_FILE" ]; then
 		cp "$BINARY_FILE" "$BINARIES_DIR/$BINARY_NAME"
