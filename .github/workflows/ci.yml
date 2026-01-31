@@ -109,7 +109,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Download CLIProxyAPI binary
+      - name: Download CLIProxyAPIPlus binary
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -144,9 +144,9 @@ jobs:
               ;;
           esac
 
-          echo "Downloading CLIProxyAPI for ${{ matrix.target }}..."
+          echo "Downloading CLIProxyAPIPlus for ${{ matrix.target }}..."
           cd /tmp
-          gh release download --repo router-for-me/CLIProxyAPI --pattern "$ASSET_PATTERN" --clobber
+          gh release download --repo router-for-me/CLIProxyAPIPlus --pattern "$ASSET_PATTERN" --clobber
 
           ARCHIVE=$(ls $ASSET_PATTERN 2>/dev/null | head -1)
           echo "Extracting $ARCHIVE..."
@@ -157,7 +157,18 @@ jobs:
             tar -xzf "$ARCHIVE"
           fi
 
-          if [ -f "CLIProxyAPI" ]; then
+          # CLIProxyAPIPlus binary detection (prioritize Plus naming, fallback to original)
+          if [ -f "cli-proxy-api-plus" ]; then
+            cp cli-proxy-api-plus "$GITHUB_WORKSPACE/src-tauri/binaries/$BINARY"
+            chmod +x "$GITHUB_WORKSPACE/src-tauri/binaries/$BINARY"
+          elif [ -f "cli-proxy-api-plus.exe" ]; then
+            cp cli-proxy-api-plus.exe "$GITHUB_WORKSPACE/src-tauri/binaries/$BINARY"
+          elif [ -f "CLIProxyAPIPlus" ]; then
+            cp CLIProxyAPIPlus "$GITHUB_WORKSPACE/src-tauri/binaries/$BINARY"
+            chmod +x "$GITHUB_WORKSPACE/src-tauri/binaries/$BINARY"
+          elif [ -f "CLIProxyAPIPlus.exe" ]; then
+            cp CLIProxyAPIPlus.exe "$GITHUB_WORKSPACE/src-tauri/binaries/$BINARY"
+          elif [ -f "CLIProxyAPI" ]; then
             cp CLIProxyAPI "$GITHUB_WORKSPACE/src-tauri/binaries/$BINARY"
             chmod +x "$GITHUB_WORKSPACE/src-tauri/binaries/$BINARY"
           elif [ -f "CLIProxyAPI.exe" ]; then
