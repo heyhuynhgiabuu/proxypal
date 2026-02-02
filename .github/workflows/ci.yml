@@ -41,8 +41,8 @@ jobs:
       - name: Create placeholder binary for CI check
         run: |
           mkdir -p src-tauri/binaries
-          touch src-tauri/binaries/cliproxyapi-aarch64-apple-darwin
-          chmod +x src-tauri/binaries/cliproxyapi-aarch64-apple-darwin
+          touch src-tauri/binaries/cli-proxy-api-aarch64-apple-darwin
+          chmod +x src-tauri/binaries/cli-proxy-api-aarch64-apple-darwin
 
       - name: TypeScript check
         run: pnpm tsc --noEmit
@@ -120,22 +120,22 @@ jobs:
           case "${{ matrix.target }}" in
             aarch64-apple-darwin)
               ASSET_PATTERN="*darwin_arm64.tar.gz"
-              BINARY="cliproxyapi-aarch64-apple-darwin"
+              BINARY="cli-proxy-api-aarch64-apple-darwin"
               ARCHIVE_TYPE="tar"
               ;;
             x86_64-apple-darwin)
               ASSET_PATTERN="*darwin_amd64.tar.gz"
-              BINARY="cliproxyapi-x86_64-apple-darwin"
+              BINARY="cli-proxy-api-x86_64-apple-darwin"
               ARCHIVE_TYPE="tar"
               ;;
             x86_64-unknown-linux-gnu)
               ASSET_PATTERN="*linux_amd64.tar.gz"
-              BINARY="cliproxyapi-x86_64-unknown-linux-gnu"
+              BINARY="cli-proxy-api-x86_64-unknown-linux-gnu"
               ARCHIVE_TYPE="tar"
               ;;
             x86_64-pc-windows-msvc)
               ASSET_PATTERN="*windows_amd64.zip"
-              BINARY="cliproxyapi-x86_64-pc-windows-msvc.exe"
+              BINARY="cli-proxy-api-x86_64-pc-windows-msvc.exe"
               ARCHIVE_TYPE="zip"
               ;;
             *)

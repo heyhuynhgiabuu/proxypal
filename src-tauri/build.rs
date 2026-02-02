@@ -72,7 +72,7 @@ fn main() {
 }
 
 fn get_binary_name(target: &str) -> String {
-    let base_name = "cliproxyapi";
+    let base_name = "cli-proxy-api";
     
     // Map Rust target triples to our binary naming convention
     let suffix = match target {
