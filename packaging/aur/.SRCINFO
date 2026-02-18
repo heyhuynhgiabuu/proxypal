@@ -19,6 +19,7 @@ pkgbase = proxypal
 	depends = libsoup3
 	depends = pango
 	depends = webkit2gtk-4.1
+	options = !lto
 	source = proxypal-0.3.120.tar.gz::https://github.com/heyhuynhgiabuu/proxypal/archive/refs/tags/v0.3.120.tar.gz
 	sha256sums = baee779399d32ff1eb2722ff3e45594ff45aa2daf12e7b430e71030e8680afce
 
