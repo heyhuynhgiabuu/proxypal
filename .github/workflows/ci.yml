@@ -8,6 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  CLIPROXYAPI_VERSION: "6.7.34-0"
 
 jobs:
   check:
@@ -51,9 +52,28 @@ jobs:
         run: cargo check
         working-directory: src-tauri
 
+  aur-metadata:
+    name: AUR Metadata
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Arch packaging toolchain
+        run: pacman -Syu --noconfirm --needed base-devel git
+
+      - name: Create non-root build user
+        run: |
+          useradd -m builduser
+          chown -R builduser:builduser "$GITHUB_WORKSPACE"
+
+      - name: Verify PKGBUILD and .SRCINFO are in sync
+        run: |
+          su builduser -c "cd \"$GITHUB_WORKSPACE/packaging/aur\" && makepkg --printsrcinfo > /tmp/.SRCINFO.generated && diff -u .SRCINFO /tmp/.SRCINFO.generated"
+
   build:
     name: Build (${{ matrix.platform }})
-    needs: check
+    needs: [check, aur-metadata]
     strategy:
       fail-fast: false
       matrix:
@@ -119,22 +139,22 @@ jobs:
 
           case "${{ matrix.target }}" in
             aarch64-apple-darwin)
-              ASSET_PATTERN="*darwin_arm64.tar.gz"
+              ASSET_PATTERN="CLIProxyAPIPlus_${CLIPROXYAPI_VERSION}_darwin_arm64.tar.gz"
               BINARY="cli-proxy-api-aarch64-apple-darwin"
               ARCHIVE_TYPE="tar"
               ;;
             x86_64-apple-darwin)
-              ASSET_PATTERN="*darwin_amd64.tar.gz"
+              ASSET_PATTERN="CLIProxyAPIPlus_${CLIPROXYAPI_VERSION}_darwin_amd64.tar.gz"
               BINARY="cli-proxy-api-x86_64-apple-darwin"
               ARCHIVE_TYPE="tar"
               ;;
             x86_64-unknown-linux-gnu)
-              ASSET_PATTERN="*linux_amd64.tar.gz"
+              ASSET_PATTERN="CLIProxyAPIPlus_${CLIPROXYAPI_VERSION}_linux_amd64.tar.gz"
               BINARY="cli-proxy-api-x86_64-unknown-linux-gnu"
               ARCHIVE_TYPE="tar"
               ;;
             x86_64-pc-windows-msvc)
-              ASSET_PATTERN="*windows_amd64.zip"
+              ASSET_PATTERN="CLIProxyAPIPlus_${CLIPROXYAPI_VERSION}_windows_amd64.zip"
               BINARY="cli-proxy-api-x86_64-pc-windows-msvc.exe"
               ARCHIVE_TYPE="zip"
               ;;
@@ -202,12 +222,12 @@ jobs:
 
   notify:
     name: Discord Notification
-    needs: [check, build]
+    needs: [check, aur-metadata, build]
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: Discord notification (success)
-        if: ${{ needs.check.result == 'success' && needs.build.result == 'success' }}
+        if: ${{ needs.check.result == 'success' && needs.aur-metadata.result == 'success' && needs.build.result == 'success' }}
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
@@ -216,7 +236,7 @@ jobs:
             $DISCORD_WEBHOOK
 
       - name: Discord notification (failure)
-        if: ${{ needs.check.result == 'failure' || needs.build.result == 'failure' }}
+        if: ${{ needs.check.result == 'failure' || needs.aur-metadata.result == 'failure' || needs.build.result == 'failure' }}
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |

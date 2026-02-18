@@ -1,0 +1,25 @@
+pkgbase = proxypal
+	pkgdesc = Use your AI subscriptions with any coding tool
+	pkgver = 0.3.120
+	pkgrel = 1
+	url = https://github.com/heyhuynhgiabuu/proxypal
+	arch = x86_64
+	license = MIT
+	makedepends = cargo
+	makedepends = nodejs
+	makedepends = pnpm
+	makedepends = rust
+	depends = cairo
+	depends = desktop-file-utils
+	depends = gdk-pixbuf2
+	depends = glib2
+	depends = gtk3
+	depends = hicolor-icon-theme
+	depends = libappindicator-gtk3
+	depends = libsoup3
+	depends = pango
+	depends = webkit2gtk-4.1
+	source = proxypal-0.3.120.tar.gz::https://github.com/heyhuynhgiabuu/proxypal/archive/refs/tags/v0.3.120.tar.gz
+	sha256sums = baee779399d32ff1eb2722ff3e45594ff45aa2daf12e7b430e71030e8680afce
+
+pkgname = proxypal

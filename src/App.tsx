@@ -15,11 +15,19 @@ import { appStore } from "./stores/app";
 import { themeStore } from "./stores/theme";
 
 function App() {
-	const { currentPage, isInitialized, initialize, setCurrentPage } = appStore;
+	const {
+		currentPage,
+		initialize,
+		isLoading,
+		retryInitialize,
+		setCurrentPage,
+		startupError,
+		startupState,
+	} = appStore;
 	const { t } = useI18n();
 
 	onMount(() => {
-		initialize();
+		void initialize();
 
 		// Listen for navigation events from child components
 		const handleNavigateToSettings = (e: Event) => {
@@ -38,25 +46,52 @@ function App() {
 		});
 	});
 
+	const renderStartupState = () => (
+		<div class="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4">
+			<div class="text-center max-w-xl">
+				<div class="w-16 h-16 mx-auto rounded-2xl flex items-center justify-center mb-4 animate-pulse">
+					<img
+						src={
+							themeStore.resolvedTheme() === "dark"
+								? "/proxypal-white.png"
+								: "/proxypal-black.png"
+						}
+						alt="ProxyPal Logo"
+						class="w-16 h-16 rounded-2xl object-contain"
+					/>
+				</div>
+
+				<Switch>
+					<Match when={startupState() === "error"}>
+						<div class="space-y-3" role="alert">
+							<p class="text-red-600 dark:text-red-400 font-medium">
+								ProxyPal failed to start
+							</p>
+							<p class="text-sm text-gray-600 dark:text-gray-300 break-words">
+								{startupError() ?? "Unknown startup error"}
+							</p>
+							<button
+								type="button"
+								onClick={() => void retryInitialize()}
+								disabled={isLoading()}
+								class="px-4 py-2 rounded-lg bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 hover:opacity-90 disabled:opacity-50"
+							>
+								{isLoading() ? "Retrying..." : "Retry startup"}
+							</button>
+						</div>
+					</Match>
+					<Match when={startupState() === "loading"}>
+						<p class="text-gray-500 dark:text-gray-400">{t("app.loading")}</p>
+					</Match>
+				</Switch>
+			</div>
+		</div>
+	);
+
 	return (
 		<>
-			{!isInitialized() ? (
-				<div class="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-					<div class="text-center">
-						<div class="w-16 h-16 mx-auto rounded-2xl flex items-center justify-center mb-4  animate-pulse">
-							<img
-								src={
-									themeStore.resolvedTheme() === "dark"
-										? "/proxypal-white.png"
-										: "/proxypal-black.png"
-								}
-								alt="ProxyPal Logo"
-								class="w-16 h-16 rounded-2xl object-contain"
-							/>
-						</div>
-						<p class="text-gray-500 dark:text-gray-400">{t("app.loading")}</p>
-					</div>
-				</div>
+			{startupState() !== "ready" ? (
+				renderStartupState()
 			) : (
 				<>
 					<Sidebar />

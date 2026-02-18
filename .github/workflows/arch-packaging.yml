@@ -1,0 +1,41 @@
+name: Arch Packaging
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packaging/aur/**"
+      - ".github/workflows/arch-packaging.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "packaging/aur/**"
+      - ".github/workflows/arch-packaging.yml"
+
+jobs:
+  validate:
+    name: Validate AUR package metadata
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Arch packaging toolchain
+        run: pacman -Syu --noconfirm --needed base-devel git
+
+      - name: Create non-root build user
+        run: |
+          useradd -m builduser
+          chown -R builduser:builduser "$GITHUB_WORKSPACE"
+
+      - name: Verify PKGBUILD and .SRCINFO are in sync
+        run: |
+          su builduser -c "cd \"$GITHUB_WORKSPACE/packaging/aur\" && makepkg --printsrcinfo > /tmp/.SRCINFO.generated && diff -u .SRCINFO /tmp/.SRCINFO.generated"
+
+      - name: Verify sources
+        run: |
+          su builduser -c "cd \"$GITHUB_WORKSPACE/packaging/aur\" && makepkg --verifysource --skippgpcheck"
+
+      - name: Validate makepkg no-build flow
+        run: |
+          su builduser -c "cd \"$GITHUB_WORKSPACE/packaging/aur\" && makepkg --nobuild --nodeps --nocheck"

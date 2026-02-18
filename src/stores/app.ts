@@ -32,6 +32,45 @@ import {
 	syncUsageFromProxy,
 } from "../lib/tauri";
 
+const STARTUP_TIMEOUT_MS = 15000;
+
+type StartupState = "loading" | "ready" | "error";
+
+function toErrorMessage(error: unknown): string {
+	if (error instanceof Error) {
+		return error.message;
+	}
+
+	if (typeof error === "string") {
+		return error;
+	}
+
+	return "Unknown startup error";
+}
+
+function withTimeout<T>(
+	promise: Promise<T>,
+	operation: string,
+	timeoutMs = STARTUP_TIMEOUT_MS,
+): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		const timeoutId = setTimeout(() => {
+			reject(new Error(`Timed out while trying to ${operation}`));
+		}, timeoutMs);
+
+		void promise.then(
+			(value) => {
+				clearTimeout(timeoutId);
+				resolve(value);
+			},
+			(error) => {
+				clearTimeout(timeoutId);
+				reject(error);
+			},
+		);
+	});
+}
+
 function createAppStore() {
 	// Proxy state
 	const [proxyStatus, setProxyStatus] = createSignal<ProxyStatus>({
@@ -103,11 +142,25 @@ function createAppStore() {
 	>("dashboard");
 	const [isLoading, setIsLoading] = createSignal(false);
 	const [isInitialized, setIsInitialized] = createSignal(false);
+	const [startupState, setStartupState] = createSignal<StartupState>("loading");
+	const [startupError, setStartupError] = createSignal<string | null>(null);
 	const [sidebarExpanded, setSidebarExpanded] = createSignal(false);
 	const [settingsTab, setSettingsTab] = createSignal<string | null>(null);
+	let unlistenEvents: (() => void) | null = null;
 
 	// Proxy uptime tracking
 	const [proxyStartTime, setProxyStartTime] = createSignal<number | null>(null);
+
+	const clearEventListeners = () => {
+		if (unlistenEvents) {
+			unlistenEvents();
+			unlistenEvents = null;
+		}
+	};
+
+	onCleanup(() => {
+		clearEventListeners();
+	});
 
 	// Helper to update proxy status and track uptime
 	const updateProxyStatus = (status: ProxyStatus, showNotification = false) => {
@@ -130,13 +183,22 @@ function createAppStore() {
 
 	// Initialize from backend
 	const initialize = async () => {
+		if (isLoading()) {
+			return;
+		}
+
+		const pendingUnlisteners: Array<() => void> = [];
+
 		try {
 			setIsLoading(true);
+			setIsInitialized(false);
+			setStartupState("loading");
+			setStartupError(null);
 
 			// Load initial state from backend
 			const [proxyState, configState] = await Promise.all([
-				getProxyStatus(),
-				getConfig(),
+				withTimeout(getProxyStatus(), "load proxy status"),
+				withTimeout(getConfig(), "load app config"),
 			]);
 
 			updateProxyStatus(proxyState);
@@ -176,68 +238,99 @@ function createAppStore() {
 
 			// Refresh auth status from CLIProxyAPI's auth directory
 			try {
-				const authState = await refreshAuthStatus();
+				const authState = await withTimeout(
+					refreshAuthStatus(),
+					"refresh authentication status",
+				);
 				setAuthStatus(authState);
-			} catch {
-				// Fall back to saved auth status
-				const authState = await getAuthStatus();
+			} catch (error) {
+				console.warn(
+					"Failed to refresh auth status, falling back to saved state",
+					error,
+				);
+				const authState = await withTimeout(
+					getAuthStatus(),
+					"load saved authentication status",
+				);
 				setAuthStatus(authState);
 			}
 
 			// Setup event listeners
-			const unlistenProxy = await onProxyStatusChanged((status) => {
-				updateProxyStatus(status);
-			});
+			const unlistenProxy = await withTimeout(
+				onProxyStatusChanged((status) => {
+					updateProxyStatus(status);
+				}),
+				"register proxy status listener",
+			);
+			pendingUnlisteners.push(unlistenProxy);
 
-			const unlistenAuth = await onAuthStatusChanged((status) => {
-				setAuthStatus(status);
-			});
+			const unlistenAuth = await withTimeout(
+				onAuthStatusChanged((status) => {
+					setAuthStatus(status);
+				}),
+				"register auth status listener",
+			);
+			pendingUnlisteners.push(unlistenAuth);
 
-			const unlistenOAuth = await onOAuthCallback(
-				async (data: OAuthCallback) => {
-					// Complete the OAuth flow
+			const unlistenOAuth = await withTimeout(
+				onOAuthCallback(async (data: OAuthCallback) => {
 					try {
 						const newAuthStatus = await completeOAuth(data.provider, data.code);
 						setAuthStatus(newAuthStatus);
-						// Navigate to dashboard after successful auth
 						setCurrentPage("dashboard");
 					} catch (error) {
 						console.error("Failed to complete OAuth:", error);
 					}
-				},
+				}),
+				"register OAuth callback listener",
 			);
+			pendingUnlisteners.push(unlistenOAuth);
 
-			const unlistenTray = await onTrayToggleProxy(async (shouldStart) => {
-				try {
-					if (shouldStart) {
-						const status = await startProxy();
-						updateProxyStatus(status, true); // Show notification
-					} else {
-						const status = await stopProxy();
-						updateProxyStatus(status, true); // Show notification
+			const unlistenTray = await withTimeout(
+				onTrayToggleProxy(async (shouldStart) => {
+					try {
+						if (shouldStart) {
+							const status = await startProxy();
+							updateProxyStatus(status, true);
+						} else {
+							const status = await stopProxy();
+							updateProxyStatus(status, true);
+						}
+					} catch (error) {
+						console.error("Failed to toggle proxy:", error);
 					}
-				} catch (error) {
-					console.error("Failed to toggle proxy:", error);
+				}),
+				"register tray toggle listener",
+			);
+			pendingUnlisteners.push(unlistenTray);
+
+			const unlistenSsh = await withTimeout(
+				onSshStatusChanged((status) => {
+					setSshStatus((prev) => ({ ...prev, [status.id]: status }));
+				}),
+				"register SSH status listener",
+			);
+			pendingUnlisteners.push(unlistenSsh);
+
+			const unlistenCf = await withTimeout(
+				onCloudflareStatusChanged((status) => {
+					setCloudflareStatus((prev) => ({ ...prev, [status.id]: status }));
+				}),
+				"register Cloudflare status listener",
+			);
+			pendingUnlisteners.push(unlistenCf);
+
+			clearEventListeners();
+			unlistenEvents = () => {
+				for (const unlisten of pendingUnlisteners) {
+					unlisten();
 				}
-			});
-
-			const unlistenSsh = await onSshStatusChanged((status) => {
-				setSshStatus((prev) => ({ ...prev, [status.id]: status }));
-			});
-
-			const unlistenCf = await onCloudflareStatusChanged((status) => {
-				setCloudflareStatus((prev) => ({ ...prev, [status.id]: status }));
-			});
-
-			onCleanup(() => {
-				unlistenSsh();
-				unlistenCf();
-			});
+			};
 
 			// Auto-start proxy if configured
 			if (nextConfig.autoStart) {
 				try {
-					const status = await startProxy();
+					const status = await withTimeout(startProxy(), "auto-start proxy", 30000);
 					updateProxyStatus(status);
 				} catch (error) {
 					console.error("Failed to auto-start proxy:", error);
@@ -246,26 +339,34 @@ function createAppStore() {
 
 			// Sync usage data from CLIProxyAPI on startup
 			try {
-				await syncUsageFromProxy();
+				await withTimeout(syncUsageFromProxy(), "sync usage on startup", 20000);
 			} catch (error) {
 				console.error("Failed to sync usage on startup:", error);
 			}
 
 			setIsInitialized(true);
-
-			// Cleanup on unmount
-			onCleanup(() => {
-				unlistenProxy();
-				unlistenAuth();
-				unlistenOAuth();
-				unlistenTray();
-				unlistenSsh();
-			});
+			setStartupState("ready");
 		} catch (error) {
+			for (const unlisten of pendingUnlisteners) {
+				try {
+					unlisten();
+				} catch (unlistenError) {
+					console.error("Failed to remove startup listener:", unlistenError);
+				}
+			}
+
+			const message = toErrorMessage(error);
+			setStartupError(message);
+			setStartupState("error");
+			setIsInitialized(false);
 			console.error("Failed to initialize app:", error);
 		} finally {
 			setIsLoading(false);
 		}
+	};
+
+	const retryInitialize = async () => {
+		await initialize();
 	};
 
 	const setLocale = (locale: string) => {
@@ -304,11 +405,14 @@ function createAppStore() {
 		isLoading,
 		setIsLoading,
 		isInitialized,
+		startupState,
+		startupError,
 		sidebarExpanded,
 		setSidebarExpanded,
 
 		// Actions
 		initialize,
+		retryInitialize,
 	};
 }
 
