@@ -7,6 +7,7 @@ use crate::state::AppState;
 use crate::types::ProxyStatus;
 use crate::helpers::log_watcher::start_log_watcher;
 use crate::get_management_key;
+use crate::build_management_client;
 use crate::GPT5_BASE_MODELS;
 use crate::GPT5_REASONING_SUFFIXES;
 
@@ -627,16 +628,18 @@ pub async fn start_proxy(
         }
     });
 
-    // Give it a moment to start
-    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+    // Give it more time to fully start up and stabilize
+    tokio::time::sleep(tokio::time::Duration::from_millis(3000)).await;
     
     // Sync usage statistics setting via Management API (in case it differs from config file)
     let port = config.port;
     let enable_url = format!("http://127.0.0.1:{}/v0/management/usage-statistics-enabled", port);
-    let client = reqwest::Client::new();
+    let client = build_management_client();
+    let mgmt_key = get_management_key();
+    
     let _ = client
         .put(&enable_url)
-        .header("X-Management-Key", &get_management_key())
+        .header("X-Management-Key", &mgmt_key)
         .json(&serde_json::json!({"value": config.usage_stats_enabled}))
         .send()
         .await;
@@ -645,7 +648,7 @@ pub async fn start_proxy(
     let force_mappings_url = format!("http://127.0.0.1:{}/v0/management/ampcode/force-model-mappings", port);
     let _ = client
         .put(&force_mappings_url)
-        .header("X-Management-Key", &get_management_key())
+        .header("X-Management-Key", &mgmt_key)
         .json(&serde_json::json!({"value": config.force_model_mappings}))
         .send()
         .await;

@@ -84,31 +84,24 @@ pub async fn get_oauth_url(
         _ => return Err(format!("Unknown provider: {}", provider)),
     };
 
-    // Make HTTP request to get OAuth URL
-    let client = reqwest::Client::new();
-    let response = client
-        .get(&endpoint)
-        .header("X-Management-Key", &crate::get_management_key())
-        .send()
-        .await
-        .map_err(|e| format!("Failed to get OAuth URL: {}. Is the proxy running?", e))?;
-
-    if !response.status().is_success() {
-        return Err(format!(
-            "Management API returned error: {}",
-            response.status()
-        ));
-    }
-
-    // Parse response to get URL and state
-    let body: serde_json::Value = response
-        .json()
-        .await
+    // Make HTTP request to get OAuth URL with retry logic using ureq
+    let mgmt_key = crate::get_management_key();
+    let endpoint_clone = endpoint.clone();
+    let mgmt_key_clone = mgmt_key.clone();
+    
+    let body_text = tokio::task::spawn_blocking(move || {
+        crate::make_management_request_ureq(&endpoint_clone, &mgmt_key_clone)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+    .map_err(|e| format!("Failed to get OAuth URL: {}. Is the proxy running?", e))?;
+    
+    let body: serde_json::Value = serde_json::from_str(&body_text)
         .map_err(|e| format!("Failed to parse response: {}", e))?;
 
     let oauth_url = body["url"]
         .as_str()
-        .ok_or("No URL in response")?
+        .ok_or_else(|| "No URL in response".to_string())?
         .to_string();
 
     let oauth_state = body["state"].as_str().unwrap_or("").to_string();
@@ -127,6 +120,7 @@ pub async fn get_oauth_url(
         state: oauth_state,
     })
 }
+
 
 /// Open a URL in the default browser
 #[tauri::command]
@@ -199,32 +193,25 @@ pub async fn open_oauth(
         // Note: Kiro is handled above with direct Web UI
         _ => return Err(format!("Unknown provider: {}", provider)),
     };
-
-    // Make HTTP request to get OAuth URL
-    let client = reqwest::Client::new();
-    let response = client
-        .get(&endpoint)
-        .header("X-Management-Key", &crate::get_management_key())
-        .send()
-        .await
-        .map_err(|e| format!("Failed to get OAuth URL: {}. Is the proxy running?", e))?;
-
-    if !response.status().is_success() {
-        return Err(format!(
-            "Management API returned error: {}",
-            response.status()
-        ));
-    }
-
-    // Parse response to get URL and state
-    let body: serde_json::Value = response
-        .json()
-        .await
+    
+    // Make HTTP request to get OAuth URL with retry logic using ureq
+    let mgmt_key = crate::get_management_key();
+    let endpoint_clone = endpoint.clone();
+    let mgmt_key_clone = mgmt_key.clone();
+    
+    let body_text = tokio::task::spawn_blocking(move || {
+        crate::make_management_request_ureq(&endpoint_clone, &mgmt_key_clone)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+    .map_err(|e| format!("Failed to get OAuth URL: {}. Is the proxy running?", e))?;
+    
+    let body: serde_json::Value = serde_json::from_str(&body_text)
         .map_err(|e| format!("Failed to parse response: {}", e))?;
 
     let oauth_url = body["url"]
         .as_str()
-        .ok_or("No URL in response")?
+        .ok_or_else(|| "No URL in response".to_string())?
         .to_string();
 
     let oauth_state = body["state"].as_str().unwrap_or("").to_string();

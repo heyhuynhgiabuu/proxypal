@@ -172,9 +172,61 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 // Helper to build HTTP client for Management API
 pub(crate) fn build_management_client() -> reqwest::Client {
     reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(30))
+        .pool_max_idle_per_host(0) // Disable connection pooling
+        .tcp_keepalive(None) // Disable TCP keepalive
+        .http1_only() // Force HTTP/1.1
         .build()
         .unwrap_or_else(|_| reqwest::Client::new())
+}
+
+// Helper function to make HTTP requests with retry logic using ureq (pure sync HTTP client)
+pub(crate) fn make_management_request_ureq(
+    url: &str,
+    mgmt_key: &str,
+) -> Result<String, String> {
+    let max_retries = 5;
+    let mut last_error = String::new();
+    
+    for attempt in 1..=max_retries {
+        match ureq::get(url)
+            .set("X-Management-Key", mgmt_key)
+            .call()
+        {
+            Ok(response) => {
+                let status = response.status();
+                
+                if status == 502 {
+                    let body = response.into_string().unwrap_or_else(|_| "Unable to read body".to_string());
+                    last_error = format!("502 Bad Gateway - Body: {}", body);
+                    
+                    if attempt < max_retries {
+                        let delay_ms = 1000 * attempt as u64;
+                        std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+                    }
+                    continue;
+                }
+                
+                if status < 200 || status >= 300 {
+                    let body = response.into_string().unwrap_or_else(|_| "Unable to read body".to_string());
+                    return Err(format!("HTTP {}: {}", status, body));
+                }
+                
+                let body = response.into_string().map_err(|e| format!("Failed to read response: {}", e))?;
+                return Ok(body);
+            }
+            Err(e) => {
+                last_error = format!("{}", e);
+                
+                if attempt < max_retries {
+                    let delay_ms = 1000 * attempt as u64;
+                    std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+                }
+            }
+        }
+    }
+    
+    Err(format!("Failed after {} attempts: {}", max_retries, last_error))
 }
 
 // Helper to get Management API base URL
