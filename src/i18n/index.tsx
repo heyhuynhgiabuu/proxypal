@@ -1,21 +1,24 @@
 import { flatten } from "@solid-primitives/i18n";
 import { createContext, createMemo, useContext } from "solid-js";
 import { en } from "./en";
+import { ru } from "./ru";
 import { zhCN } from "./zh-CN";
 
 import type { Accessor, JSX } from "solid-js";
 
-export const LOCALE_OPTIONS = ["en", "zh-CN"] as const;
+export const LOCALE_OPTIONS = ["en", "ru", "zh-CN"] as const;
 
 export type Locale = (typeof LOCALE_OPTIONS)[number];
 
 export const LOCALE_LABELS: Record<Locale, string> = {
   en: "English",
+  ru: "Русский",
   "zh-CN": "中文",
 };
 
 const dictionaries = {
   en,
+  ru,
   "zh-CN": zhCN,
 } as const;
 
@@ -35,6 +38,10 @@ function interpolate(template: string, params?: TranslationParams): string {
 export function toSupportedLocale(value: string | undefined | null): Locale {
   if (!value) {
     return "en";
+  }
+
+  if (value === "ru" || value.toLowerCase().startsWith("ru-")) {
+    return "ru";
   }
 
   if (value === "zh" || value.toLowerCase().startsWith("zh-")) {
