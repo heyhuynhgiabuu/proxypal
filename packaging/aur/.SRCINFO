@@ -1,6 +1,6 @@
 pkgbase = proxypal
 	pkgdesc = Use your AI subscriptions with any coding tool
-	pkgver = 0.3.120
+	pkgver = 0.4.5
 	pkgrel = 1
 	url = https://github.com/heyhuynhgiabuu/proxypal
 	arch = x86_64
@@ -20,7 +20,7 @@ pkgbase = proxypal
 	depends = pango
 	depends = webkit2gtk-4.1
 	options = !lto
-	source = proxypal-0.3.120.tar.gz::https://github.com/heyhuynhgiabuu/proxypal/archive/refs/tags/v0.3.120.tar.gz
-	sha256sums = baee779399d32ff1eb2722ff3e45594ff45aa2daf12e7b430e71030e8680afce
+	source = proxypal-0.4.5.tar.gz::https://github.com/heyhuynhgiabuu/proxypal/archive/refs/tags/v0.4.5.tar.gz
+	sha256sums = d64acf43247075dab5ae2fa867c1be1425d1ca2cec8149e35225f2b6159afa1d
 
 pkgname = proxypal

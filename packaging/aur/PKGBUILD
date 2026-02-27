@@ -1,7 +1,7 @@
 # Maintainer: Ramiro Rivera <ramarivera at users.noreply.github.com>
 
 pkgname=proxypal
-pkgver=0.3.120
+pkgver=0.4.5
 pkgrel=1
 pkgdesc="Use your AI subscriptions with any coding tool"
 arch=('x86_64')
@@ -27,11 +27,13 @@ makedepends=(
   'rust'
 )
 source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz")
-sha256sums=('baee779399d32ff1eb2722ff3e45594ff45aa2daf12e7b430e71030e8680afce')
+sha256sums=('d64acf43247075dab5ae2fa867c1be1425d1ca2cec8149e35225f2b6159afa1d')
 
 prepare() {
   cd "${srcdir}/${pkgname}-${pkgver}"
-  chmod +x src-tauri/binaries/cli-proxy-api-x86_64-unknown-linux-gnu
+  if [[ -f src-tauri/binaries/cli-proxy-api-x86_64-unknown-linux-gnu ]]; then
+    chmod +x src-tauri/binaries/cli-proxy-api-x86_64-unknown-linux-gnu
+  fi
 }
 
 build() {
