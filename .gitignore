@@ -28,6 +28,7 @@ pnpm-debug.log*
 
 # Tauri
 src-tauri/target/
+src-tauri/binaries/
 
 # OpenCode & Backlog
 .opencode/

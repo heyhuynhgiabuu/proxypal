@@ -39,18 +39,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Create placeholder binary for CI check
-        run: |
-          mkdir -p src-tauri/binaries
-          touch src-tauri/binaries/cli-proxy-api-aarch64-apple-darwin
-          chmod +x src-tauri/binaries/cli-proxy-api-aarch64-apple-darwin
-
-      - name: TypeScript check
-        run: pnpm tsc --noEmit
+      - name: Frontend checks (ts + lint + format)
+        run: pnpm check:parallel
 
       - name: Rust check
         run: cargo check
         working-directory: src-tauri
+        env:
+          PROXYPAL_SKIP_SIDECAR: "1"
 
   aur-metadata:
     name: AUR Metadata

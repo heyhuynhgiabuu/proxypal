@@ -75,6 +75,28 @@ pnpm install
 pnpm tauri dev
 ```
 
+### Checks
+
+```bash
+pnpm check:ts        # tsgo when installed, otherwise tsc --noEmit
+pnpm check:parallel  # check:ts + lint + format:check (parallel)
+cd src-tauri && cargo check
+```
+
+Optional tsgo setup:
+
+```bash
+pnpm add -D @typescript/native-preview
+```
+
+Optional VS Code setting:
+
+```json
+{
+  "typescript.experimental.useTsgo": true
+}
+```
+
 **Tech Stack**: SolidJS + TypeScript + Tailwind (frontend), Rust + Tauri v2 (backend), CLIProxyAPI (proxy)
 
 ## Contributing

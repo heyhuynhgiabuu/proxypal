@@ -3,27 +3,21 @@ import { splitProps } from "solid-js";
 
 interface SwitchProps {
   checked?: boolean;
-  onChange?: (checked: boolean) => void;
+  description?: string;
   disabled?: boolean;
   label?: string;
-  description?: string;
+  onChange?: (checked: boolean) => void;
 }
 
 export function Switch(props: SwitchProps) {
-  const [local] = splitProps(props, [
-    "checked",
-    "onChange",
-    "disabled",
-    "label",
-    "description",
-  ]);
+  const [local] = splitProps(props, ["checked", "onChange", "disabled", "label", "description"]);
 
   return (
     <KobalteSwitch
-      class="flex items-center justify-between"
       checked={local.checked}
-      onChange={local.onChange}
+      class="flex items-center justify-between"
       disabled={local.disabled}
+      onChange={local.onChange}
     >
       <div class="flex flex-col">
         {local.label && (
@@ -38,8 +32,8 @@ export function Switch(props: SwitchProps) {
         )}
       </div>
       <KobalteSwitch.Input class="sr-only" />
-      <KobalteSwitch.Control class="w-11 h-6 bg-gray-300 dark:bg-gray-600 rounded-full relative transition-colors ui-checked:bg-green-500 dark:ui-checked:bg-green-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
-        <KobalteSwitch.Thumb class="block w-5 h-5 bg-white rounded-full shadow-md transform transition-transform translate-x-0.5 ui-checked:translate-x-[22px] mt-0.5" />
+      <KobalteSwitch.Control class="relative h-6 w-11 cursor-pointer rounded-full bg-gray-300 transition-colors disabled:cursor-not-allowed disabled:opacity-50 ui-checked:bg-green-500 dark:bg-gray-600 dark:ui-checked:bg-green-500">
+        <KobalteSwitch.Thumb class="mt-0.5 block h-5 w-5 translate-x-0.5 transform rounded-full bg-white shadow-md transition-transform ui-checked:translate-x-[22px]" />
       </KobalteSwitch.Control>
     </KobalteSwitch>
   );

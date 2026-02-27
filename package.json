@@ -1,6 +1,6 @@
 {
   "name": "proxypal",
-  "version": "0.3.120",
+  "version": "0.4.5",
   "description": "",
   "license": "MIT",
   "type": "module",
@@ -11,7 +11,15 @@
     "serve": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "lint": "oxlint -c oxlint.config.mjs .",
+    "lint:fix": "oxlint -c oxlint.config.mjs --fix .",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "check:ts": "node scripts/check-ts.mjs",
+    "check:parallel": "node scripts/check-parallel.mjs",
+    "check": "pnpm tsc --noEmit && pnpm lint && pnpm format:check",
+    "update-sidecar": "node scripts/update-sidecar.mjs --force"
   },
   "dependencies": {
     "@kobalte/core": "^0.13.11",
@@ -19,29 +27,32 @@
     "@solid-primitives/i18n": "^2.2.1",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-dialog": "^2.6.0",
-    "@tauri-apps/plugin-fs": "^2.4.4",
+    "@tauri-apps/plugin-fs": "^2.4.5",
     "@tauri-apps/plugin-notification": "^2.3.3",
-    "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-opener": "^2.5.3",
     "@tauri-apps/plugin-os": "^2.3.2",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.10.0",
     "chart.js": "^4.5.1",
     "echarts": "^6.0.0",
     "solid-echarts": "^0.0.4",
-    "solid-js": "^1.9.3"
+    "solid-js": "^1.9.11"
   },
   "devDependencies": {
+    "@nkzw/oxlint-config": "^1.0.1",
     "@solidjs/router": "^0.15.4",
     "@solidjs/testing-library": "^0.8.10",
-    "@tauri-apps/cli": "^2",
+    "@tauri-apps/cli": "^2.10.0",
     "@testing-library/jest-dom": "^6.9.1",
-    "autoprefixer": "^10.4.22",
-    "jsdom": "^28.0.0",
+    "autoprefixer": "^10.4.24",
+    "jsdom": "^28.1.0",
+    "oxfmt": "^0.34.0",
+    "oxlint": "^1.49.0",
     "postcss": "^8.5.6",
-    "tailwindcss": "3",
-    "typescript": "~5.6.2",
-    "vite": "^6.0.3",
-    "vite-plugin-solid": "^2.11.0",
+    "tailwindcss": "^3.4.19",
+    "typescript": "~5.6.3",
+    "vite": "^6.4.1",
+    "vite-plugin-solid": "^2.11.10",
     "vitest": "^4.0.18"
   }
 }

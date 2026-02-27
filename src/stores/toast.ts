@@ -3,25 +3,23 @@ import { createSignal, createRoot } from "solid-js";
 export type ToastType = "success" | "error" | "info" | "warning";
 
 export interface Toast {
-  id: string;
-  type: ToastType;
-  title: string;
   description?: string;
   duration: number;
+  id: string;
+  title: string;
+  type: ToastType;
 }
 
 function createToastStore() {
   const [toasts, setToasts] = createSignal<Toast[]>([]);
 
-  const addToast = (
-    toast: Omit<Toast, "id" | "duration"> & { duration?: number },
-  ) => {
-    const id = Math.random().toString(36).substring(2, 9);
+  const addToast = (toast: Omit<Toast, "id" | "duration"> & { duration?: number }) => {
+    const id = Math.random().toString(36).slice(2, 9);
     const duration = toast.duration ?? 4000;
     const newToast: Toast = {
       ...toast,
-      id,
       duration,
+      id,
     };
 
     setToasts((prev) => [...prev, newToast]);
@@ -42,24 +40,24 @@ function createToastStore() {
 
   // Convenience methods
   const success = (title: string, description?: string) =>
-    addToast({ type: "success", title, description });
+    addToast({ description, title, type: "success" });
 
   const error = (title: string, description?: string) =>
-    addToast({ type: "error", title, description, duration: 6000 });
+    addToast({ description, duration: 6000, title, type: "error" });
 
   const info = (title: string, description?: string) =>
-    addToast({ type: "info", title, description });
+    addToast({ description, title, type: "info" });
 
   const warning = (title: string, description?: string) =>
-    addToast({ type: "warning", title, description, duration: 5000 });
+    addToast({ description, duration: 5000, title, type: "warning" });
 
   return {
-    toasts,
     addToast,
-    removeToast,
-    success,
     error,
     info,
+    removeToast,
+    success,
+    toasts,
     warning,
   };
 }

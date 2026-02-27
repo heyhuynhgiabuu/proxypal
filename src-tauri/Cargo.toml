@@ -1,6 +1,6 @@
 [package]
 name = "proxypal"
-version = "0.3.120"
+version = "0.4.5"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -29,7 +29,14 @@ tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["process", "io-util", "sync", "time", "macros", "rt-multi-thread"] }
+tokio = { version = "1", features = [
+  "process",
+  "io-util",
+  "sync",
+  "time",
+  "macros",
+  "rt-multi-thread",
+] }
 dirs = "5"
 rand = "0.8"
 url = "2"

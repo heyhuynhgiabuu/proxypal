@@ -155,10 +155,18 @@ jobs:
             cp cli-proxy-api "$GITHUB_WORKSPACE/src-tauri/binaries/$BINARY"
             chmod +x "$GITHUB_WORKSPACE/src-tauri/binaries/$BINARY"
           else
-            echo "ERROR: Binary not found!"
-            echo "Looking for: $SRC_BINARY"
-            ls -la
-            exit 1
+            # Recursive search fallback in case binary is nested in subdirectory
+            FOUND=$(find . -type f \( -name "cli-proxy-api-plus" -o -name "CLIProxyAPIPlus" -o -name "CLIProxyAPI" -o -name "cli-proxy-api" -o -name "$SRC_BINARY" \) ! -name "*.tar.gz" ! -name "*.zip" ! -name "*.tgz" | head -1)
+            if [ -n "$FOUND" ]; then
+              echo "Found binary via recursive search: $FOUND"
+              cp "$FOUND" "$GITHUB_WORKSPACE/src-tauri/binaries/$BINARY"
+              chmod +x "$GITHUB_WORKSPACE/src-tauri/binaries/$BINARY" 2>/dev/null || true
+            else
+              echo "ERROR: Binary not found!"
+              echo "Looking for: $SRC_BINARY"
+              ls -laR
+              exit 1
+            fi
           fi
 
           echo "Downloaded:"

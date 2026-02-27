@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 use crate::types::{
     amp::generate_uuid, cloudflare::CloudflareConfig, AmpModelMapping, AmpOpenAIProvider,
@@ -228,46 +229,81 @@ pub fn get_aggregate_path() -> std::path::PathBuf {
 
 /// Load config from file
 pub fn load_config() -> AppConfig {
-    let path = get_config_path();
-    if path.exists() {
-        if let Ok(data) = std::fs::read_to_string(&path) {
-            if let Ok(mut config) = serde_json::from_str::<AppConfig>(&data) {
-                // Migration: Convert deprecated amp_openai_provider to amp_openai_providers array
-                if let Some(old_provider) = config.amp_openai_provider.take() {
-                    if config.amp_openai_providers.is_empty() {
-                        eprintln!("[ProxyPal] Migrating config from old provider format to array format...");
-                        eprintln!(
-                            "[ProxyPal] Old provider: {} with {} models",
-                            old_provider.name,
-                            old_provider.models.len()
-                        );
-                        for (i, model) in old_provider.models.iter().enumerate() {
-                            eprintln!("[ProxyPal]   Preserving model {}: {}", i, model.name);
-                        }
-                        let provider_with_id = if old_provider.id.is_empty() {
-                            AmpOpenAIProvider {
-                                id: generate_uuid(),
-                                ..old_provider
-                            }
-                        } else {
-                            old_provider
-                        };
-                        config.amp_openai_providers.push(provider_with_id);
-                        let _ = save_config_to_file(&config);
-                        eprintln!("[ProxyPal] Config migration complete");
-                    }
-                }
-                return config;
+    load_config_from_path(&get_config_path())
+}
+
+fn migrate_config(config: &mut AppConfig) -> bool {
+    if let Some(old_provider) = config.amp_openai_provider.take() {
+        if config.amp_openai_providers.is_empty() {
+            eprintln!("[ProxyPal] Migrating config from old provider format to array format...");
+            eprintln!(
+                "[ProxyPal] Old provider: {} with {} models",
+                old_provider.name,
+                old_provider.models.len()
+            );
+            for (i, model) in old_provider.models.iter().enumerate() {
+                eprintln!("[ProxyPal]   Preserving model {}: {}", i, model.name);
             }
+            let provider_with_id = if old_provider.id.is_empty() {
+                AmpOpenAIProvider {
+                    id: generate_uuid(),
+                    ..old_provider
+                }
+            } else {
+                old_provider
+            };
+            config.amp_openai_providers.push(provider_with_id);
+            eprintln!("[ProxyPal] Config migration complete");
+            return true;
         }
     }
-    AppConfig::default()
+
+    false
+}
+
+fn load_config_from_path(path: &Path) -> AppConfig {
+    if !path.exists() {
+        return AppConfig::default();
+    }
+
+    let data = match std::fs::read_to_string(path) {
+        Ok(data) => data,
+        Err(e) => {
+            eprintln!(
+                "[ProxyPal] Failed to read config file '{}': {}. Falling back to defaults.",
+                path.display(),
+                e
+            );
+            return AppConfig::default();
+        }
+    };
+
+    let mut config = match serde_json::from_str::<AppConfig>(&data) {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!(
+                "[ProxyPal] Failed to parse config file '{}': {}. Falling back to defaults.",
+                path.display(),
+                e
+            );
+            return AppConfig::default();
+        }
+    };
+
+    if migrate_config(&mut config) {
+        let _ = save_config_to_path(path, &config);
+    }
+
+    config
 }
 
 /// Save config to file
 /// Uses atomic write (write to temp file then rename) to prevent corruption
 pub fn save_config_to_file(config: &AppConfig) -> Result<(), String> {
-    let path = get_config_path();
+    save_config_to_path(&get_config_path(), config)
+}
+
+pub(crate) fn save_config_to_path(path: &Path, config: &AppConfig) -> Result<(), String> {
     let config_dir = path.parent().ok_or("Invalid config path")?;
 
     // Ensure config directory exists
@@ -320,4 +356,85 @@ pub fn save_config_to_file(config: &AppConfig) -> Result<(), String> {
     eprintln!("[ProxyPal] Config saved successfully to: {:?}", path);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn test_dir(prefix: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("proxypal-{}-{}", prefix, generate_uuid()));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn load_config_from_missing_file_returns_defaults() {
+        let dir = test_dir("config-missing");
+        let path = dir.join("config.json");
+
+        let loaded = load_config_from_path(&path);
+
+        assert_eq!(loaded.port, AppConfig::default().port);
+        assert_eq!(
+            loaded.routing_strategy,
+            AppConfig::default().routing_strategy
+        );
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn load_config_from_invalid_json_returns_defaults() {
+        let dir = test_dir("config-invalid");
+        let path = dir.join("config.json");
+        fs::write(&path, "{ invalid json").unwrap();
+
+        let loaded = load_config_from_path(&path);
+
+        assert_eq!(loaded.port, AppConfig::default().port);
+        assert_eq!(
+            loaded.routing_strategy,
+            AppConfig::default().routing_strategy
+        );
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn load_config_migrates_deprecated_openai_provider() {
+        let dir = test_dir("config-migrate");
+        let path = dir.join("config.json");
+
+        let legacy_json = r#"{
+  "port": 8317,
+  "autoStart": true,
+  "launchAtLogin": false,
+  "ampOpenaiProvider": {
+    "id": "",
+    "name": "Legacy",
+    "apiKey": "test-key",
+    "baseUrl": "https://api.openai.com/v1",
+    "models": [
+      { "name": "gpt-4.1", "enabled": true }
+    ],
+    "enabled": true
+  },
+  "ampOpenaiProviders": []
+}"#;
+
+        fs::write(&path, legacy_json).unwrap();
+        let loaded = load_config_from_path(&path);
+
+        assert_eq!(loaded.amp_openai_providers.len(), 1);
+        assert_eq!(loaded.amp_openai_providers[0].name, "Legacy");
+        assert!(!loaded.amp_openai_providers[0].id.is_empty());
+        assert!(loaded.amp_openai_provider.is_none());
+
+        let persisted = fs::read_to_string(&path).unwrap();
+        assert!(persisted.contains("ampOpenaiProviders"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
 }

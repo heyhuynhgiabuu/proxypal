@@ -1,0 +1,29 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 100,
+  "trailingComma": "all",
+
+  // Import sorting
+  "experimentalSortImports": {
+    "newlinesBetween": false,
+    "groups": [
+      ["value-builtin", "value-external"],
+      ["value-internal", "value-parent", "value-sibling", "value-index"],
+      { "newlinesBetween": true },
+      "type-import",
+      "unknown",
+    ],
+  },
+
+  // Tailwind CSS class sorting (v3)
+  "experimentalTailwindcss": {
+    "config": "./tailwind.config.js",
+  },
+
+  // package.json field sorting
+  "experimentalSortPackageJson": {
+    "sortScripts": false,
+  },
+
+  "ignorePatterns": ["dist/", "src-tauri/target/", "node_modules/", "pnpm-lock.yaml"],
+}

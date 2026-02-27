@@ -1,77 +1,76 @@
-# ProxyPal Development Guidelines
+# ProxyPal
+
+Tauri v2 desktop app — proxy API management with SolidJS frontend and Rust backend.
+
+## Stack
+
+- **Frontend:** SolidJS 1.9 + TypeScript 5.6 + Tailwind CSS 3 + Kobalte UI
+- **Backend:** Rust (Tauri v2, 10 plugins: dialog, fs, updater, deep-link, etc.)
+- **Build:** Vite 6 + Tauri CLI | **Test:** Vitest 4 | **PM:** pnpm
+- **Charts:** ECharts 6 + Chart.js 4 | **i18n:** @solid-primitives/i18n
+
+## Structure
+
+```
+src/                        # SolidJS frontend
+  components/               # UI components (22+), charts/, ui/
+  pages/                    # Dashboard, Analytics, ApiKeys, Settings, etc.
+  stores/                   # Reactive stores (app, requests, theme, toast)
+  i18n/                     # Internationalization (locale, catalog)
+  lib/                      # Utilities (tauri bindings, quotaCache)
+src-tauri/src/              # Rust backend
+  commands/                 # Tauri commands (proxy, cloudflare, ssh, config)
+  types/                    # Shared type definitions (16 modules)
+  lib.rs                    # Main library entry
+  config.rs, state.rs       # App config and state management
+```
 
 ## Commands
 
-- **Dev**: `pnpm tauri dev`
-- **Type check**: `pnpm tsc --noEmit`
-- **Rust check**: `cd src-tauri && cargo check`
+```bash
+pnpm tauri dev              # Dev (frontend + backend)
+pnpm tsc --noEmit           # Type check (frontend)
+pnpm check:ts               # Fast type check (uses tsgo when available, falls back to tsc)
+pnpm check:parallel         # Parallel: type check + lint + format
+cd src-tauri && cargo check # Type check (backend)
+pnpm test                   # Vitest (10 tests, 3 files)
+pnpm build                  # Vite build (frontend only)
+```
 
 ## Code Style
 
-### TypeScript (Frontend - SolidJS)
-
-- **Components**: Functional components with `interface Props` directly above.
-- **Reactivity**: Use `createSignal`, `createMemo`, and `splitProps` for clean prop handling.
-- **Tailwind**: Use `class` instead of `className`.
-- **Imports**: External -> Internal Aliases (`../lib`, `../stores`) -> Relative.
-
 ```tsx
-interface ButtonProps extends JSX.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: "primary" | "secondary";
+// SolidJS: interface above component, splitProps, `class` not `className`
+interface ProviderCardProps {
+  name: string;
+  provider: Provider;
+  connected: number;
+  onConnect: (provider: Provider) => Promise<void>;
 }
-
-export function Button(props: ButtonProps) {
-  const [local, others] = splitProps(props, ["variant", "class", "children"]);
-  return (
-    <button class={`btn-${local.variant} ${local.class}`} {...others}>
-      {local.children}
-    </button>
-  );
+export function ProviderCard(props: ProviderCardProps) {
+  const [loading, setLoading] = createSignal(false);
+  // ...
 }
 ```
 
-### Rust (Backend - Tauri)
-
-- **Commands**: Return `Result<T, String>` for error propagation.
-- **State**: Access via `State<AppState>`, handle mutex locking gracefully.
-- **JSON**: Use `#[serde(rename_all = "camelCase")]` for frontend compatibility.
-
 ```rust
+// Rust: Result<T, String>, State<AppState>, #[serde(rename_all = "camelCase")]
 #[tauri::command]
 pub fn save_config(state: State<AppState>, config: AppConfig) -> Result<(), String> {
     let mut current_config = state.config.lock().unwrap();
     *current_config = config;
-    save_config_to_file(&current_config)?;
     Ok(())
 }
 ```
 
 ## Boundaries
 
-✅ **Always**:
+- **Always:** Run `pnpm tsc --noEmit` + `cd src-tauri && cargo check` before done. Preserve Tailwind card/badge patterns.
+- **Ask first:** New dependencies. Modifying `AppConfig` schema. Changing CLIProxyAPI lifecycle.
+- **Never:** Commit secrets/`.env`. Blocking IO in async Rust without `spawn_blocking`. Edit `dist/` or `target/`.
 
-- Run `pnpm tsc --noEmit` and `cargo check` before claiming a task is done.
-- Use `bd sync` after creating or closing issues.
-- Preserve existing Tailwind styling patterns for cards and badges.
+## Gotchas
 
-⚠️ **Ask first**:
-
-- Adding new external dependencies.
-- Modifying `AppConfig` schema or global state structure.
-- Changing CLIProxyAPI lifecycle management logic.
-
-🚫 **Never**:
-
-- Commit secrets or `.env` files.
-- Use blocking IO in async Rust tasks without `spawn_blocking`.
-- Modify `dist/` or `src-tauri/target/` directories manually.
-
-## Beads Workflow
-
-1. **Claim**: `bd update <id> --status in_progress`
-2. **Work**: Implement change -> `git add` -> `bd sync`
-3. **Finish**: `bd close <id> --reason "..."` -> `bd sync` -> `git commit` -> `git push`
-
----
-
-_Refer to .opencode/memory/ for detailed architecture and conventions._
+- `lib.rs` is 332KB — navigate with LSP, don't read fully
+- Vite build warns about chunk size (>500KB) — expected
+- Both `bun.lock` and `pnpm-lock.yaml` exist — use pnpm

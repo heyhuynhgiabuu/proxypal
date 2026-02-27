@@ -1,62 +1,62 @@
 {
-	"$schema": "https://schema.tauri.app/config/2",
-	"productName": "ProxyPal",
-	"version": "0.3.120",
-	"identifier": "com.proxypal.app",
-	"build": {
-		"beforeDevCommand": "pnpm dev",
-		"devUrl": "http://localhost:1420",
-		"beforeBuildCommand": "pnpm build",
-		"frontendDist": "../dist"
-	},
-	"app": {
-		"withGlobalTauri": false,
-		"windows": [
-			{
-				"title": "ProxyPal",
-				"width": 800,
-				"height": 640,
-				"resizable": true,
-				"fullscreen": false,
-				"center": true,
-				"decorations": true,
-				"visible": true
-			}
-		],
-		"security": {
-			"csp": null
-		}
-	},
-	"bundle": {
-		"createUpdaterArtifacts": true,
-		"externalBin": ["binaries/cli-proxy-api"],
-		"active": true,
-		"targets": ["app", "dmg", "nsis", "appimage", "deb"],
-		"icon": [
-			"icons/32x32.png",
-			"icons/128x128.png",
-			"icons/128x128@2x.png",
-			"icons/icon.icns",
-			"icons/icon.ico"
-		],
-		"category": "DeveloperTool",
-		"shortDescription": "Use your AI subscriptions everywhere",
-		"longDescription": "ProxyPal lets you use your existing Claude, ChatGPT, Gemini, and Qwen subscriptions with any AI coding tool. No separate API keys needed.",
-		"macOS": {
-			"minimumSystemVersion": "10.15"
-		}
-	},
-	"plugins": {
-		"deep-link": {
-			"desktop": {
-				"schemes": ["proxypal"]
-			}
-		},
-		"updater": {
-			"endpoints": [
-				"https://github.com/heyhuynhgiabuu/proxypal/releases/latest/download/latest.json"
-			],
-			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhEQzYxOTgxRThFMzg3N0MKUldSOGgrUG9nUm5HalJJMlBmcUxGU1lqWGJWWUZCcGo5RXFNQy9IYmZvWGpVbkNJV3pRWFh5MFEK"
-		}
-	}
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "ProxyPal",
+  "version": "0.4.5",
+  "identifier": "com.proxypal.app",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "title": "ProxyPal",
+        "width": 800,
+        "height": 640,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true,
+        "decorations": true,
+        "visible": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "createUpdaterArtifacts": true,
+    "externalBin": ["binaries/cli-proxy-api"],
+    "active": true,
+    "targets": ["app", "dmg", "nsis", "appimage", "deb"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "DeveloperTool",
+    "shortDescription": "Use your AI subscriptions everywhere",
+    "longDescription": "ProxyPal lets you use your existing Claude, ChatGPT, Gemini, and Qwen subscriptions with any AI coding tool. No separate API keys needed.",
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["proxypal"]
+      }
+    },
+    "updater": {
+      "endpoints": [
+        "https://github.com/heyhuynhgiabuu/proxypal/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhEQzYxOTgxRThFMzg3N0MKUldSOGgrUG9nUm5HalJJMlBmcUxGU1lqWGJWWUZCcGo5RXFNQy9IYmZvWGpVbkNJV3pRWFh5MFEK"
+    }
+  }
 }

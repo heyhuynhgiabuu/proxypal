@@ -7,18 +7,16 @@ BINARY_NAME="${1:-}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BINARIES_DIR="$SCRIPT_DIR/../binaries"
 
-# Use CLIProxyAPIPlus
+# Use CLIProxyAPIPlus (always downloads latest release)
 CLIPROXYAPI_REPO="${CLIPROXYAPI_REPO:-router-for-me/CLIProxyAPIPlus}"
 
-# Pinned version for deterministic builds (override with CLIPROXYAPI_VERSION)
-CLIPROXYAPI_VERSION="${CLIPROXYAPI_VERSION:-6.7.34-0}"
-VERSION="${CLIPROXYAPI_VERSION#v}"
-
+# Get latest version from GitHub API
+VERSION=$(curl -s "https://api.github.com/repos/${CLIPROXYAPI_REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"v?([^"]+)".*/\1/')
 if [ -z "$VERSION" ]; then
-	echo "Error: CLIPROXYAPI_VERSION is empty"
+	echo "Error: Could not fetch latest version from ${CLIPROXYAPI_REPO}"
 	exit 1
 fi
-echo "Using pinned CLIProxyAPI version: $VERSION"
+echo "Using CLIProxyAPI version: $VERSION"
 
 # Map Tauri target to CLIProxyAPIPlus asset name (bash 3 compatible - no associative arrays)
 get_asset_info() {
