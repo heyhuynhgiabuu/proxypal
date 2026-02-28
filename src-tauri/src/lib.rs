@@ -122,7 +122,12 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
     // Use dedicated tray icon (22x22 @1x, 44x44 @2x for retina)
     let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray-icon@2x.png"))
-        .expect("Failed to load tray icon");
+        .map_err(|error| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to load tray icon: {}", error),
+            )
+        })?;
     
     let _tray = TrayIconBuilder::new()
         .icon(tray_icon)
@@ -284,7 +289,17 @@ pub fn run() {
         .manage(CloudflareManager::new())
         .setup(|app| {
             // Setup system tray
-            #[cfg(desktop)]
+            #[cfg(all(desktop, target_os = "linux"))]
+            {
+                if let Err(error) = setup_tray(app) {
+                    eprintln!(
+                        "[ProxyPal Debug] Failed to initialize system tray on Linux: {}",
+                        error
+                    );
+                }
+            }
+
+            #[cfg(all(desktop, not(target_os = "linux")))]
             setup_tray(app)?;
 
             // Register deep link handler for when app is already running

@@ -11,20 +11,14 @@ if (-not (Test-Path $BinariesDir)) {
 }
 
 $Repo = "router-for-me/CLIProxyAPIPlus"
-# Fetch latest version (no fallback - must succeed)
-try {
-    $LatestRelease = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest"
-    $Version = $LatestRelease.tag_name -replace "^v", ""
-} catch {
-    Write-Error "Failed to fetch latest version from ${Repo}: $_"
-    exit 1
-}
+$ConfiguredVersion = if ($env:CLIPROXYAPI_VERSION) { $env:CLIPROXYAPI_VERSION } else { "6.7.34-0" }
+$Version = $ConfiguredVersion -replace "^v", ""
 
 if ([string]::IsNullOrEmpty($Version)) {
-    Write-Error "Error: Fetched version is empty from $Repo"
+    Write-Error "Error: CLIPROXYAPI_VERSION is empty"
     exit 1
 }
-Write-Host "Using CLIProxyAPIPlus version: $Version"
+Write-Host "Using pinned CLIProxyAPIPlus version: $Version"
 
 # Determine Asset and ArchiveType based on BinaryName
 $AssetName = ""

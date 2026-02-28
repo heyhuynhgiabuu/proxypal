@@ -3,7 +3,11 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
+const ALLOW_DOWNLOAD_ENV: &str = "PROXYPAL_ALLOW_SIDECAR_DOWNLOAD";
+
 fn main() {
+    println!("cargo:rerun-if-env-changed={}", ALLOW_DOWNLOAD_ENV);
+
     // Get the target triple for the current build
     let target = env::var("TARGET")
         .unwrap_or_else(|_| env::var("HOST").unwrap_or_else(|_| String::from("unknown")));
@@ -13,9 +17,7 @@ fn main() {
     let binary_path = binaries_dir.join(&binary_name);
 
     let is_ci = env::var("CI").is_ok();
-    // CARGO_PRIMARY_PACKAGE is set during check/build of the workspace root package.
-    // For `cargo check`, Tauri doesn't bundle sidecars, so we can skip validation.
-    // The release workflow downloads the binary before `cargo build`.
+    // For check-only flows we can skip sidecar enforcement.
     let is_check_only = env::var("PROXYPAL_SKIP_SIDECAR").is_ok();
 
     let needs_download = if !binary_path.exists() {
@@ -26,7 +28,7 @@ fn main() {
             "cargo:warning=Sidecar binary is corrupted (gzip/invalid format): {}",
             binary_name
         );
-        // Remove the invalid file so the download replaces it
+        // Remove the invalid file so the download replaces it.
         let _ = fs::remove_file(&binary_path);
         true
     } else {
@@ -35,7 +37,7 @@ fn main() {
 
     if needs_download {
         if is_check_only {
-            // Create a dummy binary so tauri_build::build() doesn't fail
+            // Create a dummy binary so tauri_build::build() doesn't fail.
             let _ = fs::create_dir_all(&binaries_dir);
             fs::write(&binary_path, b"PLACEHOLDER").unwrap_or_else(|e| {
                 println!("cargo:warning=Failed to create placeholder binary: {}", e);
@@ -50,13 +52,34 @@ fn main() {
                 Check the 'Download CLI Proxy API' step in your workflow.",
                 binary_name
             );
-        } else {
-            println!("cargo:warning=Downloading sidecar from CLIProxyAPI releases...");
+        } else if should_auto_download() {
+            println!(
+                "cargo:warning={} enabled; downloading sidecar binary",
+                ALLOW_DOWNLOAD_ENV
+            );
             download_binary(&binary_name, &binaries_dir);
+        } else {
+            panic!(
+                "Required sidecar binary is missing or invalid: {}\nExpected at: {}\n\
+Set {}=1 to auto-download during local development, or place the binary in src-tauri/binaries manually.\n\
+You can also run `pnpm update-sidecar --force` to fetch the pinned release.",
+                binary_name,
+                binary_path.display(),
+                ALLOW_DOWNLOAD_ENV
+            );
         }
     }
 
     tauri_build::build()
+}
+
+fn should_auto_download() -> bool {
+    env::var(ALLOW_DOWNLOAD_ENV)
+        .map(|value| {
+            let normalized = value.trim().to_ascii_lowercase();
+            normalized == "1" || normalized == "true" || normalized == "yes"
+        })
+        .unwrap_or(false)
 }
 
 /// Validate that the file is a real executable, not a gzip archive or other invalid format.
@@ -182,6 +205,7 @@ fn download_binary(binary_name: &str, binaries_dir: &Path) {
 fn get_binary_name(target: &str) -> String {
     let base_name = "cli-proxy-api";
 
+    // Map Rust target triples to our binary naming convention
     let suffix = match target {
         "aarch64-apple-darwin" => "aarch64-apple-darwin",
         "x86_64-apple-darwin" => "x86_64-apple-darwin",

@@ -46,7 +46,23 @@ xattr -cr /Applications/ProxyPal.app
 | macOS    | Apple Silicon (ARM64) | ✅     |
 | macOS    | Intel (x64)           | ✅     |
 | Windows  | x64                   | ✅     |
-| Linux    | x64 (.deb)            | ✅     |
+| Linux    | x64 (.deb / AppImage) | ✅     |
+
+## Arch Linux (AUR)
+
+The source-package metadata for AUR is maintained in `packaging/aur`.
+
+- Target package name: `proxypal`
+- Local metadata validation:
+
+```bash
+cd packaging/aur
+makepkg --printsrcinfo > .SRCINFO
+makepkg --verifysource
+makepkg --nobuild --nodeps
+```
+
+- AUR sync instructions are documented in `packaging/aur/README.md`.
 
 ## Supported Clients
 

@@ -7,6 +7,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  CLIPROXYAPI_VERSION: "6.7.34-0"
 
 jobs:
   release:
@@ -70,22 +71,22 @@ jobs:
 
           case "${{ matrix.target }}" in
             aarch64-apple-darwin)
-              ASSET_PATTERN="*darwin_arm64.tar.gz"
+              ASSET_PATTERN="CLIProxyAPIPlus_${CLIPROXYAPI_VERSION}_darwin_arm64.tar.gz"
               BINARY="cli-proxy-api-aarch64-apple-darwin"
               ARCHIVE_TYPE="tar"
               ;;
             x86_64-apple-darwin)
-              ASSET_PATTERN="*darwin_amd64.tar.gz"
+              ASSET_PATTERN="CLIProxyAPIPlus_${CLIPROXYAPI_VERSION}_darwin_amd64.tar.gz"
               BINARY="cli-proxy-api-x86_64-apple-darwin"
               ARCHIVE_TYPE="tar"
               ;;
             x86_64-unknown-linux-gnu)
-              ASSET_PATTERN="*linux_amd64.tar.gz"
+              ASSET_PATTERN="CLIProxyAPIPlus_${CLIPROXYAPI_VERSION}_linux_amd64.tar.gz"
               BINARY="cli-proxy-api-x86_64-unknown-linux-gnu"
               ARCHIVE_TYPE="tar"
               ;;
             x86_64-pc-windows-msvc)
-              ASSET_PATTERN="*windows_amd64.zip"
+              ASSET_PATTERN="CLIProxyAPIPlus_${CLIPROXYAPI_VERSION}_windows_amd64.zip"
               BINARY="cli-proxy-api-x86_64-pc-windows-msvc.exe"
               ARCHIVE_TYPE="zip"
               ;;
@@ -255,9 +256,9 @@ jobs:
             fi
           fi
 
-          # Get CLIProxyAPIPlus latest release info
-          SIDECAR_RELEASE=$(gh release view --repo router-for-me/CLIProxyAPIPlus --json tagName,body 2>/dev/null || echo "{}")
-          SIDECAR_VERSION=$(echo "$SIDECAR_RELEASE" | jq -r '.tagName // "unknown"')
+          # Get pinned CLIProxyAPIPlus release info
+          SIDECAR_VERSION="v${CLIPROXYAPI_VERSION#v}"
+          SIDECAR_RELEASE=$(gh release view "$SIDECAR_VERSION" --repo router-for-me/CLIProxyAPIPlus --json body 2>/dev/null || echo "{}")
           SIDECAR_BODY=$(echo "$SIDECAR_RELEASE" | jq -r '.body // ""')
 
           echo "sidecar_version=$SIDECAR_VERSION" >> $GITHUB_OUTPUT

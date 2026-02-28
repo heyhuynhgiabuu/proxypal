@@ -1,0 +1,59 @@
+# Maintainer: Ramiro Rivera <ramarivera at users.noreply.github.com>
+
+pkgname=proxypal
+pkgver=0.4.5
+pkgrel=1
+pkgdesc="Use your AI subscriptions with any coding tool"
+arch=('x86_64')
+url="https://github.com/heyhuynhgiabuu/proxypal"
+license=('MIT')
+options=('!lto')
+depends=(
+  'cairo'
+  'desktop-file-utils'
+  'gdk-pixbuf2'
+  'glib2'
+  'gtk3'
+  'hicolor-icon-theme'
+  'libappindicator-gtk3'
+  'libsoup3'
+  'pango'
+  'webkit2gtk-4.1'
+)
+makedepends=(
+  'cargo'
+  'nodejs'
+  'pnpm'
+  'rust'
+)
+source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz")
+sha256sums=('d64acf43247075dab5ae2fa867c1be1425d1ca2cec8149e35225f2b6159afa1d')
+
+prepare() {
+  cd "${srcdir}/${pkgname}-${pkgver}"
+  if [[ -f src-tauri/binaries/cli-proxy-api-x86_64-unknown-linux-gnu ]]; then
+    chmod +x src-tauri/binaries/cli-proxy-api-x86_64-unknown-linux-gnu
+  fi
+}
+
+build() {
+  cd "${srcdir}/${pkgname}-${pkgver}"
+  pnpm install --frozen-lockfile
+  pnpm tauri build --bundles deb --config '{"bundle":{"createUpdaterArtifacts":false}}'
+}
+
+package() {
+  cd "${srcdir}/${pkgname}-${pkgver}"
+
+  local deb_file
+  deb_file="$(find src-tauri/target -type f -path '*/bundle/deb/*.deb' | head -n 1)"
+  if [[ -z "${deb_file}" ]]; then
+    echo "Could not find generated deb bundle" >&2
+    return 1
+  fi
+
+  bsdtar -xf "${deb_file}" data.tar.gz
+  bsdtar -xf data.tar.gz -C "${pkgdir}"
+
+  install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}
