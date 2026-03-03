@@ -15,7 +15,7 @@ import { toastStore } from "../stores/toast";
 import { Button } from "./ui";
 import { Switch } from "./ui/Switch";
 
-import type { CopilotApiDetection, CopilotConfig, CopilotStatus } from "../lib/tauri";
+import type { CopilotApiDetection, CopilotAuthInfo, CopilotConfig, CopilotStatus } from "../lib/tauri";
 
 interface CopilotCardProps {
   config: CopilotConfig;
@@ -29,14 +29,16 @@ export function CopilotCard(props: CopilotCardProps) {
     authenticated: false,
     endpoint: "http://localhost:4141",
     port: 4141,
+    embeddingsPort: 4142,
     running: false,
   });
   const [starting, setStarting] = createSignal(false);
   const [stopping, setStopping] = createSignal(false);
-  const [authMessage, setAuthMessage] = createSignal<string | null>(null);
+  const [authMessage, setAuthMessage] = createSignal<CopilotAuthInfo | null>(null);
   const [startError, setStartError] = createSignal<string | null>(null);
   const [expanded, setExpanded] = createSignal(false);
   const [apiDetection, setApiDetection] = createSignal<CopilotApiDetection | null>(null);
+  const [codeCopied, setCodeCopied] = createSignal(false);
 
   onMount(async () => {
     // Load initial status
@@ -67,22 +69,22 @@ export function CopilotCard(props: CopilotCardProps) {
     });
 
     // Subscribe to auth required events
-    const unlistenAuth = await onCopilotAuthRequired((message) => {
-      setAuthMessage(message);
-      // Extract the URL from the message if present
-      const urlMatch = message.match(/https:\/\/github\.com\/login\/device/);
-      if (urlMatch) {
-        toastStore.info(
-          t("copilot.toasts.githubAuthenticationRequired"),
-          t("copilot.toasts.checkTerminalForDeviceCode"),
-        );
-      }
+    const unlistenAuth = await onCopilotAuthRequired((info) => {
+      setAuthMessage(info);
+      toastStore.info(
+        t("copilot.toasts.githubAuthenticationRequired"),
+        info.userCode
+          ? `Enter code: ${info.userCode}`
+          : t("copilot.toasts.checkTerminalForDeviceCode"),
+      );
     });
 
-    // Poll for health status when running but not authenticated
+    // Poll for health status when running but not authenticated.
+    // Skip while device auth is active — the server isn't listening yet during
+    // the GitHub device flow, so HTTP failure would wrongly mark process as stopped.
     const healthPollInterval = setInterval(async () => {
       const currentStatus = status();
-      if (currentStatus.running && !currentStatus.authenticated) {
+      if (currentStatus.running && !currentStatus.authenticated && !authMessage()) {
         try {
           const healthStatus = await checkCopilotHealth();
           setStatus(healthStatus);
@@ -98,6 +100,14 @@ export function CopilotCard(props: CopilotCardProps) {
       clearInterval(healthPollInterval);
     });
   });
+
+  const handleCopyCode = async () => {
+    const code = authMessage()?.userCode;
+    if (!code) return;
+    await navigator.clipboard.writeText(code);
+    setCodeCopied(true);
+    setTimeout(() => setCodeCopied(false), 2000);
+  };
 
   const handleToggleEnabled = async (enabled: boolean) => {
     const newConfig = { ...props.config, enabled };
@@ -257,9 +267,38 @@ export function CopilotCard(props: CopilotCardProps) {
                   <p class="text-sm font-medium text-amber-800 dark:text-amber-200">
                     {t("copilot.githubAuthenticationRequired")}
                   </p>
-                  <p class="mt-1 text-xs text-amber-700 dark:text-amber-300">
-                    {t("copilot.authHelpDescription")}
-                  </p>
+                  {/* Device code display */}
+                  <Show when={authMessage()?.userCode}>
+                    <div class="mt-2 flex items-center gap-2">
+                      <code class="rounded-md border border-amber-300 bg-white px-3 py-1.5 font-mono text-lg font-bold tracking-widest text-amber-900 dark:border-amber-600 dark:bg-gray-900 dark:text-amber-200">
+                        {authMessage()?.userCode}
+                      </code>
+                      <button
+                        class="rounded-md border border-amber-300 bg-white px-2 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100 dark:border-amber-600 dark:bg-gray-800 dark:text-amber-300 dark:hover:bg-gray-700"
+                        onClick={handleCopyCode}
+                        title="Copy code"
+                        type="button"
+                      >
+                        {codeCopied() ? "Copied!" : "Copy"}
+                      </button>
+                    </div>
+                    <p class="mt-1.5 text-xs text-amber-700 dark:text-amber-300">
+                      Enter this code at{" "}
+                      <a
+                        class="font-medium underline hover:no-underline"
+                        href={authMessage()?.verificationUri ?? "https://github.com/login/device"}
+                        rel="noopener noreferrer"
+                        target="_blank"
+                      >
+                        github.com/login/device
+                      </a>
+                    </p>
+                  </Show>
+                  <Show when={!authMessage()?.userCode}>
+                    <p class="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                      {t("copilot.authHelpDescription")}
+                    </p>
+                  </Show>
                   <Button class="mt-2" onClick={handleOpenGitHubAuth} size="sm" variant="secondary">
                     <svg class="mr-1.5 h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z" />
@@ -342,6 +381,18 @@ export function CopilotCard(props: CopilotCardProps) {
               <p class="mt-1 text-xs text-green-600 dark:text-green-400">
                 {t("copilot.availableModelsDescription")}
               </p>
+              {/* Embeddings endpoint info */}
+              <div class="mt-2 rounded border border-green-200 bg-white/60 px-2 py-1.5 dark:border-green-700 dark:bg-gray-800/60">
+                <p class="text-xs font-medium text-green-800 dark:text-green-200">
+                  Embeddings endpoint
+                </p>
+                <code class="mt-0.5 block font-mono text-xs text-green-700 dark:text-green-300">
+                  http://localhost:{status().embeddingsPort}/v1/embeddings
+                </code>
+                <p class="mt-1 text-xs text-green-600 dark:text-green-400">
+                  Models: text-embedding-3-small, text-embedding-3-small-inference, text-embedding-ada-002
+                </p>
+              </div>
             </div>
           </Show>
 
@@ -484,6 +535,25 @@ export function CopilotCard(props: CopilotCardProps) {
                   type="number"
                   value={props.config.port}
                 />
+              </div>
+              <div>
+                <label class="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">
+                  Embeddings proxy port
+                </label>
+                <input
+                  class="w-24 rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                  onInput={(e) =>
+                    props.onConfigChange({
+                      ...props.config,
+                      embeddingsPort: Number.parseInt(e.currentTarget.value) || 4142,
+                    })
+                  }
+                  type="number"
+                  value={props.config.embeddingsPort ?? 4142}
+                />
+                <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                  Exposes /v1/embeddings for text-embedding-3-small and related models
+                </p>
               </div>
               <div>
                 <label class="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">

@@ -1,5 +1,5 @@
 use crate::state::AppState;
-use crate::types::{CopilotApiDetection, CopilotApiInstallResult, CopilotStatus};
+use crate::types::{CopilotApiDetection, CopilotApiInstallResult, CopilotAuthInfo, CopilotStatus};
 use tauri::{Emitter, Manager, State};
 use tauri_plugin_shell::ShellExt;
 
@@ -40,11 +40,29 @@ pub async fn start_copilot(
                 let mut status = state.copilot_status.lock().unwrap();
                 status.running = true;
                 status.port = port;
+                status.embeddings_port = config.copilot.embeddings_port;
                 status.endpoint = format!("http://localhost:{}", port);
                 status.authenticated = true;
                 status.clone()
             };
             let _ = app.emit("copilot-status-changed", new_status.clone());
+
+            // Also ensure embeddings proxy is running
+            let embeddings_port = config.copilot.embeddings_port;
+            let ep_running = {
+                let ep = state.embeddings_proxy_shutdown.lock().unwrap();
+                ep.is_some()
+            };
+            if !ep_running {
+                match crate::commands::embeddings_proxy::start_embeddings_proxy(embeddings_port, port).await {
+                    Ok(shutdown_tx) => {
+                        let mut ep_shutdown = state.embeddings_proxy_shutdown.lock().unwrap();
+                        *ep_shutdown = Some(shutdown_tx);
+                    }
+                    Err(e) => eprintln!("[ProxyPal] Warning: Could not start embeddings proxy: {}", e),
+                }
+            }
+
             return Ok(new_status);
         }
     }
@@ -178,12 +196,31 @@ pub async fn start_copilot(
         let mut status = state.copilot_status.lock().unwrap();
         status.running = true;
         status.port = port;
+        status.embeddings_port = config.copilot.embeddings_port;
         status.endpoint = format!("http://localhost:{}", port);
         status.authenticated = false;
+    }
+
+    // Start the embeddings proxy alongside copilot-api
+    let embeddings_port = config.copilot.embeddings_port;
+    match crate::commands::embeddings_proxy::start_embeddings_proxy(embeddings_port, port).await {
+        Ok(shutdown_tx) => {
+            let mut ep_shutdown = state.embeddings_proxy_shutdown.lock().unwrap();
+            *ep_shutdown = Some(shutdown_tx);
+            eprintln!("[ProxyPal] Embeddings proxy started on port {}", embeddings_port);
+        }
+        Err(e) => {
+            eprintln!("[ProxyPal] Warning: Could not start embeddings proxy: {}", e);
+            // Non-fatal — copilot-api still works for chat completions
+        }
     }
     
     // Listen for stdout/stderr in background task
     let app_handle = app.clone();
+    // Accumulate multi-line output to parse device code blocks that span multiple lines
+    let accumulated_output = std::sync::Arc::new(tokio::sync::Mutex::new(String::new()));
+    // Flag to avoid emitting auth-required repeatedly for the same session
+    let auth_emitted = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     tauri::async_runtime::spawn(async move {
         use tauri_plugin_shell::process::CommandEvent;
         
@@ -193,7 +230,7 @@ pub async fn start_copilot(
             match event {
                 CommandEvent::Stdout(line) => {
                     let text = String::from_utf8_lossy(&line);
-                    println!("[copilot-api] {}", text);
+                    println!("[copilot-api stdout] {}", text);
                     
                     // Check for successful login message
                     // copilot-api outputs "Listening on: http://localhost:PORT/" when ready
@@ -208,19 +245,26 @@ pub async fn start_copilot(
                         }
                     }
                     
-                    // Check for auth URL in output
-                    if text.contains("https://github.com/login/device") || text.contains("device code") {
-                        // Emit auth required event
-                        let _ = app_handle.emit("copilot-auth-required", text.to_string());
-                        println!("[copilot] Auth required - device code flow initiated");
+                    // Check for auth URL/device code in stdout (only emit once per session)
+                    if !auth_emitted.load(std::sync::atomic::Ordering::SeqCst) {
+                        let mut acc = accumulated_output.lock().await;
+                        acc.push_str(&text);
+                        acc.push('\n');
+                        if let Some(auth_info) = parse_copilot_auth_info(&acc) {
+                            // Only emit once we have the user code (wait for both lines to accumulate)
+                            if auth_info.user_code.is_some() {
+                                auth_emitted.store(true, std::sync::atomic::Ordering::SeqCst);
+                                println!("[copilot] Auth required - device code: {:?} (stdout)", auth_info.user_code);
+                                let _ = app_handle.emit("copilot-auth-required", auth_info);
+                            }
+                        }
                     }
                 }
                 CommandEvent::Stderr(line) => {
                     let text = String::from_utf8_lossy(&line);
-                    eprintln!("[copilot-api ERROR] {}", text);
+                    eprintln!("[copilot-api stderr] {}", text);
                     
-                    // Some processes log to stderr even for non-errors
-                    // Check if it's actually a login/running message
+                    // copilot-api writes device code to stderr — check here too
                     let text_lower = text.to_lowercase();
                     if text_lower.contains("listening on") || text.contains("Logged in as") || text.contains("Server running") {
                         if let Some(state) = app_handle.try_state::<AppState>() {
@@ -228,6 +272,20 @@ pub async fn start_copilot(
                             status.authenticated = true;
                             let _ = app_handle.emit("copilot-status-changed", status.clone());
                             println!("[copilot] ✓ Authenticated via stderr detection");
+                        }
+                    }
+                    
+                    // Also check stderr for device code (copilot-api commonly outputs device code there)
+                    if !auth_emitted.load(std::sync::atomic::Ordering::SeqCst) {
+                        let mut acc = accumulated_output.lock().await;
+                        acc.push_str(&text);
+                        acc.push('\n');
+                        if let Some(auth_info) = parse_copilot_auth_info(&acc) {
+                            if auth_info.user_code.is_some() {
+                                auth_emitted.store(true, std::sync::atomic::Ordering::SeqCst);
+                                println!("[copilot] Auth required - device code: {:?} (stderr)", auth_info.user_code);
+                                let _ = app_handle.emit("copilot-auth-required", auth_info);
+                            }
                         }
                     }
                 }
@@ -374,6 +432,14 @@ pub async fn stop_copilot(
             child.kill().map_err(|e| format!("Failed to kill copilot-api: {}", e))?;
         }
     }
+
+    // Shut down the embeddings proxy
+    {
+        let mut ep_shutdown = state.embeddings_proxy_shutdown.lock().unwrap();
+        if let Some(tx) = ep_shutdown.take() {
+            let _ = tx.send(());
+        }
+    }
     
     // Update status
     let new_status = {
@@ -394,6 +460,15 @@ pub async fn check_copilot_health(state: State<'_, AppState>) -> Result<CopilotS
     let config = state.config.lock().unwrap().clone();
     let port = config.copilot.port;
     
+    // Read the authoritative running flag from in-memory state.
+    // HTTP failure does NOT mean the process isn't running — during GitHub device auth
+    // the server hasn't started listening yet, so HTTP will fail even though the
+    // copilot-api process is alive and waiting for the user to authenticate.
+    let process_running = {
+        let status = state.copilot_status.lock().unwrap();
+        status.running
+    };
+    
     let client = crate::build_management_client();
     let health_url = format!("http://127.0.0.1:{}/v1/models", port);
     
@@ -403,8 +478,8 @@ pub async fn check_copilot_health(state: State<'_, AppState>) -> Result<CopilotS
         .send()
         .await
     {
-        Ok(response) => (true, response.status().is_success()),
-        Err(_) => (false, false),
+        Ok(response) => (process_running, response.status().is_success()),
+        Err(_) => (process_running, false),
     };
     
     // Update status
@@ -414,6 +489,7 @@ pub async fn check_copilot_health(state: State<'_, AppState>) -> Result<CopilotS
         status.authenticated = authenticated;
         if running {
             status.port = port;
+            status.embeddings_port = config.copilot.embeddings_port;
             status.endpoint = format!("http://localhost:{}", port);
         }
         status.clone()
@@ -920,4 +996,80 @@ pub async fn install_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiInst
             version: None,
         })
     }
+}
+
+/// Parse device code authentication info from copilot-api stdout/stderr output.
+/// Returns Some(CopilotAuthInfo) if the text contains GitHub device flow information.
+/// Returns None if no auth info is found (to avoid spamming the frontend).
+///
+/// copilot-api typically outputs something like:
+///   Please visit: https://github.com/login/device
+///   Enter code: ABCD-EFGH
+/// or combined in a single line, or via `@octokit/oauth-app` format.
+fn parse_copilot_auth_info(accumulated: &str) -> Option<CopilotAuthInfo> {
+    let device_url = "https://github.com/login/device";
+    
+    // Only proceed if there's a device URL in the accumulated output
+    if !accumulated.contains(device_url) && !accumulated.to_lowercase().contains("device code") {
+        return None;
+    }
+    
+    // Try to extract the user code — copilot-api outputs it in various formats:
+    // "Enter code: XXXX-XXXX"
+    // "User code: XXXX-XXXX"
+    // "code: XXXX-XXXX"
+    // "XXXX-XXXX" (bare, on its own line near the URL)
+    let user_code = extract_user_code(accumulated);
+    
+    // Only emit event once we have both the URL and ideally the code
+    // But if we see the URL at all, emit (user may need to go to the page regardless)
+    if accumulated.contains(device_url) || user_code.is_some() {
+        Some(CopilotAuthInfo {
+            user_code,
+            verification_uri: device_url.to_string(),
+            raw_message: accumulated.lines()
+                .filter(|l| {
+                    let ll = l.to_lowercase();
+                    ll.contains("github.com/login/device") 
+                        || ll.contains("device code")
+                        || ll.contains("enter code")
+                        || ll.contains("user code")
+                        // Match bare XXXX-XXXX pattern lines
+                        || l.trim().len() == 9 && l.trim().chars().filter(|c| *c == '-').count() == 1
+                })
+                .collect::<Vec<_>>()
+                .join(" | "),
+        })
+    } else {
+        None
+    }
+}
+
+/// Extract the device user code (format: XXXX-XXXX) from copilot-api output.
+/// Scans every line unconditionally — the XXXX-XXXX pattern is specific enough.
+/// copilot-api v0.7+ outputs: `ℹ Please enter the code "B8B6-C735" in https://github.com/login/device`
+fn extract_user_code(text: &str) -> Option<String> {
+    for line in text.lines() {
+        if let Some(code) = find_device_code_in_line(line.trim()) {
+            return Some(code);
+        }
+    }
+    None
+}
+
+/// Find a XXXX-XXXX device code pattern within a single line.
+fn find_device_code_in_line(line: &str) -> Option<String> {
+    // Split by whitespace and look for XXXX-XXXX token
+    for token in line.split_whitespace() {
+        let token = token.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-');
+        let parts: Vec<&str> = token.split('-').collect();
+        if parts.len() == 2 
+            && parts[0].len() == 4 
+            && parts[1].len() == 4
+            && parts[0].chars().all(|c| c.is_ascii_alphanumeric())
+            && parts[1].chars().all(|c| c.is_ascii_alphanumeric()) {
+            return Some(token.to_uppercase());
+        }
+    }
+    None
 }

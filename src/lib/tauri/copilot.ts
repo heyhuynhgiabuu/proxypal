@@ -6,6 +6,8 @@ export interface CopilotStatus {
   authenticated: boolean;
   endpoint: string;
   port: number;
+  /** Port of the embedded embeddings proxy (exposes OpenAI-compatible /v1/embeddings) */
+  embeddingsPort: number;
   running: boolean;
 }
 
@@ -27,6 +29,13 @@ export interface CopilotApiInstallResult {
   message: string;
   success: boolean;
   version?: string;
+}
+
+// Copilot device auth info (emitted when GitHub device flow is required)
+export interface CopilotAuthInfo {
+  userCode?: string; // e.g. "ABCD-EFGH"
+  verificationUri: string; // e.g. "https://github.com/login/device"
+  rawMessage: string; // Full accumulated text for debugging
 }
 
 export async function getCopilotStatus(): Promise<CopilotStatus> {
@@ -62,9 +71,9 @@ export async function onCopilotStatusChanged(
 }
 
 export async function onCopilotAuthRequired(
-  callback: (message: string) => void,
+  callback: (info: CopilotAuthInfo) => void,
 ): Promise<UnlistenFn> {
-  return listen<string>("copilot-auth-required", (event) => {
+  return listen<CopilotAuthInfo>("copilot-auth-required", (event) => {
     callback(event.payload);
   });
 }
