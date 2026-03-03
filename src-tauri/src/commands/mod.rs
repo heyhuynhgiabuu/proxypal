@@ -7,6 +7,7 @@ pub mod auth_files;
 pub mod config;
 pub mod cloudflare;
 pub mod copilot;
+pub mod embeddings_proxy;
 pub mod health;
 pub mod logs;
 pub mod models;

@@ -249,6 +249,7 @@ pub fn run() {
         proxy_process: Mutex::new(None),
         copilot_status: Mutex::new(CopilotStatus::default()),
         copilot_process: Mutex::new(None),
+        embeddings_proxy_shutdown: Mutex::new(None),
         log_watcher_running: Arc::new(AtomicBool::new(false)),
         request_counter: Arc::new(AtomicU64::new(0)),
     };

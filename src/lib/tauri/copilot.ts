@@ -6,6 +6,8 @@ export interface CopilotStatus {
   authenticated: boolean;
   endpoint: string;
   port: number;
+  /** Port of the embedded embeddings proxy (exposes OpenAI-compatible /v1/embeddings) */
+  embeddingsPort: number;
   running: boolean;
 }
 

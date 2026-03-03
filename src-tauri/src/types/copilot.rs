@@ -7,6 +7,9 @@ pub struct CopilotConfig {
     pub enabled: bool,
     #[serde(default = "default_copilot_port")]
     pub port: u16,
+    /// Port for the embedded embeddings proxy server (proxies /v1/embeddings → copilot-api)
+    #[serde(default = "default_copilot_embeddings_port")]
+    pub embeddings_port: u16,
     #[serde(default)]
     pub account_type: String,
     #[serde(default)]
@@ -21,11 +24,16 @@ fn default_copilot_port() -> u16 {
     4141
 }
 
+fn default_copilot_embeddings_port() -> u16 {
+    4142
+}
+
 impl Default for CopilotConfig {
     fn default() -> Self {
         Self {
             enabled: false,
             port: 4141,
+            embeddings_port: 4142,
             account_type: "individual".to_string(),
             github_token: String::new(),
             rate_limit: None,
@@ -41,6 +49,8 @@ pub struct CopilotStatus {
     pub port: u16,
     pub endpoint: String,
     pub authenticated: bool,
+    /// Port of the embedded embeddings proxy (OpenAI-compatible /v1/embeddings)
+    pub embeddings_port: u16,
 }
 
 impl Default for CopilotStatus {
@@ -50,6 +60,7 @@ impl Default for CopilotStatus {
             port: 4141,
             endpoint: "http://localhost:4141".to_string(),
             authenticated: false,
+            embeddings_port: 4142,
         }
     }
 }

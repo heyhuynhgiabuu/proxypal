@@ -60,6 +60,7 @@ function createAppStore() {
     autoStart: true,
     copilot: {
       accountType: "individual",
+      embeddingsPort: 4142,
       enabled: false,
       githubToken: "",
       port: 4141,

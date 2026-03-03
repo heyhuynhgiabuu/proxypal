@@ -218,6 +218,8 @@ export interface AmpOpenAIProvider {
 export interface CopilotConfig {
   accountType: string; // "individual", "business", "enterprise"
   enabled: boolean;
+  /** Port for the embedded embeddings proxy server (exposes /v1/embeddings) */
+  embeddingsPort: number;
   githubToken: string;
   port: number;
   rateLimit?: number;

@@ -40,11 +40,29 @@ pub async fn start_copilot(
                 let mut status = state.copilot_status.lock().unwrap();
                 status.running = true;
                 status.port = port;
+                status.embeddings_port = config.copilot.embeddings_port;
                 status.endpoint = format!("http://localhost:{}", port);
                 status.authenticated = true;
                 status.clone()
             };
             let _ = app.emit("copilot-status-changed", new_status.clone());
+
+            // Also ensure embeddings proxy is running
+            let embeddings_port = config.copilot.embeddings_port;
+            let ep_running = {
+                let ep = state.embeddings_proxy_shutdown.lock().unwrap();
+                ep.is_some()
+            };
+            if !ep_running {
+                match crate::commands::embeddings_proxy::start_embeddings_proxy(embeddings_port, port).await {
+                    Ok(shutdown_tx) => {
+                        let mut ep_shutdown = state.embeddings_proxy_shutdown.lock().unwrap();
+                        *ep_shutdown = Some(shutdown_tx);
+                    }
+                    Err(e) => eprintln!("[ProxyPal] Warning: Could not start embeddings proxy: {}", e),
+                }
+            }
+
             return Ok(new_status);
         }
     }
@@ -178,8 +196,23 @@ pub async fn start_copilot(
         let mut status = state.copilot_status.lock().unwrap();
         status.running = true;
         status.port = port;
+        status.embeddings_port = config.copilot.embeddings_port;
         status.endpoint = format!("http://localhost:{}", port);
         status.authenticated = false;
+    }
+
+    // Start the embeddings proxy alongside copilot-api
+    let embeddings_port = config.copilot.embeddings_port;
+    match crate::commands::embeddings_proxy::start_embeddings_proxy(embeddings_port, port).await {
+        Ok(shutdown_tx) => {
+            let mut ep_shutdown = state.embeddings_proxy_shutdown.lock().unwrap();
+            *ep_shutdown = Some(shutdown_tx);
+            eprintln!("[ProxyPal] Embeddings proxy started on port {}", embeddings_port);
+        }
+        Err(e) => {
+            eprintln!("[ProxyPal] Warning: Could not start embeddings proxy: {}", e);
+            // Non-fatal — copilot-api still works for chat completions
+        }
     }
     
     // Listen for stdout/stderr in background task
@@ -399,6 +432,14 @@ pub async fn stop_copilot(
             child.kill().map_err(|e| format!("Failed to kill copilot-api: {}", e))?;
         }
     }
+
+    // Shut down the embeddings proxy
+    {
+        let mut ep_shutdown = state.embeddings_proxy_shutdown.lock().unwrap();
+        if let Some(tx) = ep_shutdown.take() {
+            let _ = tx.send(());
+        }
+    }
     
     // Update status
     let new_status = {
@@ -448,6 +489,7 @@ pub async fn check_copilot_health(state: State<'_, AppState>) -> Result<CopilotS
         status.authenticated = authenticated;
         if running {
             status.port = port;
+            status.embeddings_port = config.copilot.embeddings_port;
             status.endpoint = format!("http://localhost:{}", port);
         }
         status.clone()

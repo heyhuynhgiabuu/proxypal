@@ -29,6 +29,7 @@ export function CopilotCard(props: CopilotCardProps) {
     authenticated: false,
     endpoint: "http://localhost:4141",
     port: 4141,
+    embeddingsPort: 4142,
     running: false,
   });
   const [starting, setStarting] = createSignal(false);
@@ -380,6 +381,18 @@ export function CopilotCard(props: CopilotCardProps) {
               <p class="mt-1 text-xs text-green-600 dark:text-green-400">
                 {t("copilot.availableModelsDescription")}
               </p>
+              {/* Embeddings endpoint info */}
+              <div class="mt-2 rounded border border-green-200 bg-white/60 px-2 py-1.5 dark:border-green-700 dark:bg-gray-800/60">
+                <p class="text-xs font-medium text-green-800 dark:text-green-200">
+                  Embeddings endpoint
+                </p>
+                <code class="mt-0.5 block font-mono text-xs text-green-700 dark:text-green-300">
+                  http://localhost:{status().embeddingsPort}/v1/embeddings
+                </code>
+                <p class="mt-1 text-xs text-green-600 dark:text-green-400">
+                  Models: text-embedding-3-small, text-embedding-3-small-inference, text-embedding-ada-002
+                </p>
+              </div>
             </div>
           </Show>
 
@@ -522,6 +535,25 @@ export function CopilotCard(props: CopilotCardProps) {
                   type="number"
                   value={props.config.port}
                 />
+              </div>
+              <div>
+                <label class="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">
+                  Embeddings proxy port
+                </label>
+                <input
+                  class="w-24 rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                  onInput={(e) =>
+                    props.onConfigChange({
+                      ...props.config,
+                      embeddingsPort: Number.parseInt(e.currentTarget.value) || 4142,
+                    })
+                  }
+                  type="number"
+                  value={props.config.embeddingsPort ?? 4142}
+                />
+                <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                  Exposes /v1/embeddings for text-embedding-3-small and related models
+                </p>
               </div>
               <div>
                 <label class="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">
