@@ -77,3 +77,16 @@ pub struct CopilotApiInstallResult {
     pub message: String,
     pub version: Option<String>,
 }
+
+/// Structured device code auth info emitted as "copilot-auth-required" event payload.
+/// The frontend uses this to display the user code prominently instead of pointing to terminal.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CopilotAuthInfo {
+    /// The short user code to enter on github.com/login/device (e.g. "ABCD-EFGH")
+    pub user_code: Option<String>,
+    /// The verification URL (always https://github.com/login/device)
+    pub verification_uri: String,
+    /// Raw output line that triggered the event (for debugging)
+    pub raw_message: String,
+}
