@@ -467,6 +467,36 @@ pub async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetec
         }
         None
     };
+
+    // Helper: find mise node binary by checking installs directory
+    // mise (mise.jdx.dev) stores node versions under:
+    //   Unix:    ~/.local/share/mise/installs/node/{version}/bin/node
+    //   Windows: %USERPROFILE%\AppData\Local\mise\installs\node\{version}\bin\node.exe
+    let find_mise_node = |home: &std::path::Path| -> Option<String> {
+        let mise_installs = if cfg!(target_os = "windows") {
+            home.join("AppData/Local/mise/installs/node")
+        } else {
+            home.join(".local/share/mise/installs/node")
+        };
+        if mise_installs.exists() {
+            if let Ok(entries) = std::fs::read_dir(&mise_installs) {
+                let node_bin = if cfg!(target_os = "windows") { "bin/node.exe" } else { "bin/node" };
+                let mut versions: Vec<_> = entries
+                    .flatten()
+                    .filter(|e| e.path().join(node_bin).exists())
+                    .collect();
+                // Sort descending by filename (lexicographic); works well for semver-like
+                // names (e.g. "20.10.0" > "20.9.0" only when zero-padded, but this is the
+                // same best-effort approach used for nvm above)
+                versions.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+                if let Some(entry) = versions.first() {
+                    let node_path = entry.path().join(node_bin);
+                    return Some(node_path.to_string_lossy().to_string());
+                }
+            }
+        }
+        None
+    };
     
     let mut node_paths: Vec<String> = if cfg!(target_os = "macos") {
         vec![
@@ -474,6 +504,7 @@ pub async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetec
             format!("{}/.volta/bin/node", home_str),      // Volta
             format!("{}/.fnm/current/bin/node", home_str), // fnm
             format!("{}/.asdf/shims/node", home_str),      // asdf
+            format!("{}/.local/share/mise/shims/node", home_str), // mise
             // System package managers
             "/opt/homebrew/bin/node".to_string(),      // Apple Silicon Homebrew
             "/usr/local/bin/node".to_string(),          // Intel Homebrew / manual install
@@ -489,6 +520,7 @@ pub async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetec
             format!("{}/.volta/bin/node.exe", home_str),  // Volta
             format!("{}/AppData/Roaming/nvm/current/node.exe", home_str), // nvm-windows
             format!("{}/AppData/Local/fnm_multishells/node.exe", home_str), // fnm
+            format!("{}/AppData/Local/mise/shims/node.exe", home_str), // mise
             format!("{}/scoop/apps/nodejs/current/node.exe", home_str), // Scoop
             format!("{}/scoop/apps/nodejs-lts/current/node.exe", home_str), // Scoop LTS
             // Chocolatey installation path
@@ -509,6 +541,7 @@ pub async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetec
             format!("{}/.volta/bin/node", home_str),
             format!("{}/.fnm/current/bin/node", home_str),
             format!("{}/.asdf/shims/node", home_str),
+            format!("{}/.local/share/mise/shims/node", home_str), // mise
             // System paths
             "/usr/bin/node".to_string(),
             "/usr/local/bin/node".to_string(),
@@ -521,6 +554,15 @@ pub async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetec
         if let Some(nvm_node) = find_nvm_node(&home) {
             node_paths.insert(0, nvm_node); // Prioritize nvm
         }
+    };
+
+    // Add mise-installed node path if found (mise installs node per-version, shims may not be set up)
+    if let Some(mise_node) = find_mise_node(&home) {
+        // Insert after nvm (if present) but before static paths
+        let has_nvm_at_front = cfg!(not(target_os = "windows"))
+            && node_paths.first().map(|p| p.contains(".nvm")).unwrap_or(false);
+        let insert_pos = if has_nvm_at_front { 1 } else { 0 };
+        node_paths.insert(insert_pos, mise_node);
     };
     
     // Find working node binary and get version
