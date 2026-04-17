@@ -323,17 +323,30 @@ pub async fn test_auth_file_connection(
         .iter()
         .copied()
         .find(|candidate| is_model_available_for_provider(candidate, &provider, &available_models));
-    let model_id = preferred_model_id
-        .map(str::to_string)
-        .or_else(|| find_first_available_model_for_provider(&provider, &available_models));
+    let model_id = if provider == "codex" {
+        // Codex auth files backed by ChatGPT accounts can expose OpenAI models that are not
+        // valid for the generic Codex test endpoint. Only test against the known-safe allowlist.
+        preferred_model_id.map(str::to_string)
+    } else {
+        preferred_model_id
+            .map(str::to_string)
+            .or_else(|| find_first_available_model_for_provider(&provider, &available_models))
+    };
 
     let Some(model_id) = model_id else {
         return Ok(ProviderTestResult {
             success: false,
-            message: format!(
-                "No compatible test model is currently available for {} auth file {}.",
-                provider, file.name
-            ),
+            message: if provider == "codex" {
+                format!(
+                    "No supported Codex test model is currently available for auth file {}. Try again after refreshing models or use gpt-5.4 / gpt-5-codex once they are available.",
+                    file.name
+                )
+            } else {
+                format!(
+                    "No compatible test model is currently available for {} auth file {}.",
+                    provider, file.name
+                )
+            },
             latency_ms: None,
             models_found: Some(available_models.len() as u32),
         });
