@@ -4,6 +4,126 @@ use crate::types::{AvailableModel, ProviderTestResult};
 use serde::Deserialize;
 use tauri::State;
 
+fn auth_file_test_candidates(provider: &str) -> &'static [&'static str] {
+    match provider {
+        "antigravity" => &["gemini-2.5-flash"],
+        "claude" => &["claude-sonnet-4-5"],
+        // Codex auth files often fail with codex-mini preview models in the generic test flow.
+        // Prefer the stable model that is known to work with ChatGPT-backed accounts, then fall back.
+        "codex" => &["gpt-5.4", "gpt-5-codex", "gpt-5"],
+        "deepseek" => &["deepseek-chat"],
+        "gemini" | "gemini-cli" => &["gemini-2.5-flash"],
+        "iflow" => &["glm-4.5"],
+        "kimi" => &["kimi-k2.5"],
+        "qwen" => &["qwen3-coder-plus"],
+        "vertex" => &["gemini-2.5-flash"],
+        _ => &[],
+    }
+}
+
+fn is_model_available_for_provider(model_id: &str, provider: &str, models: &[AvailableModel]) -> bool {
+    let provider = provider.to_lowercase();
+    models.iter().any(|model| {
+        if model.id != model_id {
+            return false;
+        }
+
+        match provider.as_str() {
+            "antigravity" => model.owned_by == "google",
+            "claude" => model.owned_by == "anthropic",
+            "codex" => model.owned_by == "openai" && (model.source == "oauth" || model.source == "api-key"),
+            "deepseek" => model.id.contains("deepseek") || model.owned_by == "deepseek",
+            "gemini" | "gemini-cli" | "vertex" => model.owned_by == "google",
+            "iflow" => model.id.contains("glm") || model.owned_by == "iflow",
+            "kimi" => model.id.contains("kimi") || model.owned_by == "moonshotai" || model.owned_by == "kimi",
+            "qwen" => model.id.contains("qwen") || model.owned_by == "qwen",
+            _ => false,
+        }
+    })
+}
+
+fn find_first_available_model_for_provider(provider: &str, models: &[AvailableModel]) -> Option<String> {
+    let provider = provider.to_lowercase();
+    models.iter().find_map(|model| {
+        let matches = match provider.as_str() {
+            "antigravity" => model.owned_by == "google",
+            "claude" => model.owned_by == "anthropic",
+            "codex" => model.owned_by == "openai" && (model.source == "oauth" || model.source == "api-key"),
+            "deepseek" => model.id.contains("deepseek") || model.owned_by == "deepseek",
+            "gemini" | "gemini-cli" | "vertex" => model.owned_by == "google",
+            "iflow" => model.id.contains("glm") || model.owned_by == "iflow",
+            "kimi" => model.id.contains("kimi") || model.owned_by == "moonshotai" || model.owned_by == "kimi",
+            "qwen" => model.owned_by == "qwen" || model.id.contains("qwen") || model.id.contains("coder"),
+            _ => false,
+        };
+
+        if matches {
+            Some(model.id.clone())
+        } else {
+            None
+        }
+    })
+}
+
+fn build_test_payload(model_id: &str) -> serde_json::Value {
+    serde_json::json!({
+        "model": model_id,
+        "messages": [
+            {
+                "role": "user",
+                "content": "Say 'OK'"
+            }
+        ],
+        "max_tokens": 5
+    })
+}
+
+async fn send_provider_test_request(
+    client: &reqwest::Client,
+    endpoint: &str,
+    api_key: &str,
+    model_id: &str,
+) -> ProviderTestResult {
+    let payload = build_test_payload(model_id);
+    let start = std::time::Instant::now();
+    let response = client
+        .post(endpoint)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .json(&payload)
+        .send()
+        .await;
+
+    let latency = start.elapsed().as_millis() as u64;
+
+    match response {
+        Ok(resp) => {
+            let status = resp.status();
+            if status.is_success() {
+                ProviderTestResult {
+                    success: true,
+                    message: format!("Connection successful using {}", model_id),
+                    latency_ms: Some(latency),
+                    models_found: None,
+                }
+            } else {
+                let error_text = resp.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                ProviderTestResult {
+                    success: false,
+                    message: format!("Error {} testing {}: {}", status, model_id, error_text),
+                    latency_ms: Some(latency),
+                    models_found: None,
+                }
+            }
+        }
+        Err(e) => ProviderTestResult {
+            success: false,
+            message: format!("Connection failed testing {}: {}", model_id, e),
+            latency_ms: Some(latency),
+            models_found: None,
+        },
+    }
+}
+
 // Internal types for model API responses
 #[derive(Debug, Deserialize)]
 struct ModelsApiResponse {
@@ -142,56 +262,123 @@ pub async fn test_provider_connection(
         .map_err(|e| e.to_string())?;
 
     let endpoint = format!("http://localhost:{}/v1/chat/completions", port);
-    
-    let payload = serde_json::json!({
-        "model": model_id,
-        "messages": [
-            {
-                "role": "user",
-                "content": "Say 'OK'"
+    Ok(send_provider_test_request(&client, &endpoint, &api_key, &model_id).await)
+}
+
+#[tauri::command]
+pub async fn test_auth_file_connection(
+    file_id: String,
+    file_provider: String,
+    state: State<'_, AppState>,
+) -> Result<ProviderTestResult, String> {
+    let provider = file_provider.to_lowercase();
+
+    let auth_files = crate::commands::auth_files::get_auth_files(state.clone()).await?;
+    let Some(file) = auth_files.iter().find(|file| file.id == file_id || file.name == file_id) else {
+        return Ok(ProviderTestResult {
+            success: false,
+            message: format!("Auth file not found: {}", file_id),
+            latency_ms: None,
+            models_found: None,
+        });
+    };
+
+    if file.disabled {
+        return Ok(ProviderTestResult {
+            success: false,
+            message: "Auth file is disabled. Enable it before testing.".to_string(),
+            latency_ms: None,
+            models_found: None,
+        });
+    }
+
+    if file.unavailable {
+        return Ok(ProviderTestResult {
+            success: false,
+            message: file
+                .status_message
+                .clone()
+                .unwrap_or_else(|| "Auth file is unavailable.".to_string()),
+            latency_ms: None,
+            models_found: None,
+        });
+    }
+
+    let status = file.status.to_lowercase();
+    if status == "error" {
+        return Ok(ProviderTestResult {
+            success: false,
+            message: file
+                .status_message
+                .clone()
+                .unwrap_or_else(|| "Auth file is in error state.".to_string()),
+            latency_ms: None,
+            models_found: None,
+        });
+    }
+
+    let available_models = get_available_models(state.clone()).await?;
+    let candidates = auth_file_test_candidates(&provider);
+    let preferred_model_id = candidates
+        .iter()
+        .copied()
+        .find(|candidate| is_model_available_for_provider(candidate, &provider, &available_models));
+    let model_id = preferred_model_id
+        .map(str::to_string)
+        .or_else(|| find_first_available_model_for_provider(&provider, &available_models));
+
+    let Some(model_id) = model_id else {
+        return Ok(ProviderTestResult {
+            success: false,
+            message: format!(
+                "No compatible test model is currently available for {} auth file {}.",
+                provider, file.name
+            ),
+            latency_ms: None,
+            models_found: Some(available_models.len() as u32),
+        });
+    };
+
+    let (port, api_key) = {
+        let config = state.config.lock().unwrap();
+        (config.port, config.proxy_api_key.clone())
+    };
+
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let endpoint = format!("http://localhost:{}/v1/chat/completions", port);
+    let mut result = send_provider_test_request(&client, &endpoint, &api_key, &model_id).await;
+
+    if result.success {
+        result.message = format!("Auth file {} is working with {}", file.name, model_id);
+        return Ok(result);
+    }
+
+    // Codex auth files are sensitive to model compatibility. If the preferred candidate fails,
+    // try the remaining compatible fallbacks before returning a false negative.
+    if provider == "codex" {
+        for fallback in candidates.iter().copied().filter(|candidate| *candidate != model_id) {
+            if !is_model_available_for_provider(fallback, &provider, &available_models) {
+                continue;
             }
-        ],
-        "max_tokens": 5
-    });
-
-    let start = std::time::Instant::now();
-    let response = client.post(&endpoint)
-        .header("Authorization", format!("Bearer {}", api_key))
-        .json(&payload)
-        .send()
-        .await;
-    
-    let latency = start.elapsed().as_millis() as u64;
-
-    match response {
-        Ok(resp) => {
-            let status = resp.status();
-            if status.is_success() {
-                Ok(ProviderTestResult {
+            let fallback_result = send_provider_test_request(&client, &endpoint, &api_key, fallback).await;
+            if fallback_result.success {
+                return Ok(ProviderTestResult {
                     success: true,
-                    message: "Connection successful!".to_string(),
-                    latency_ms: Some(latency),
-                    models_found: None,
-                })
-            } else {
-                let error_text = resp.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-                Ok(ProviderTestResult {
-                    success: false,
-                    message: format!("Error {}: {}", status, error_text),
-                    latency_ms: Some(latency),
-                    models_found: None,
-                })
+                    message: format!("Auth file {} is working with {}", file.name, fallback),
+                    latency_ms: fallback_result.latency_ms,
+                    models_found: fallback_result.models_found,
+                });
             }
-        }
-        Err(e) => {
-            Ok(ProviderTestResult {
-                success: false,
-                message: format!("Connection failed: {}", e),
-                latency_ms: Some(latency),
-                models_found: None,
-            })
+            result = fallback_result;
         }
     }
+
+    Ok(result)
 }
 
 #[tauri::command]

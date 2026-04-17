@@ -410,6 +410,7 @@ pub fn run() {
             commands::models::get_available_models,
             commands::models::test_openai_provider,
             commands::models::test_provider_connection,
+            commands::models::test_auth_file_connection,
             commands::models::fetch_openai_compatible_models,
             // API Keys Management
             commands::api_keys::get_gemini_api_keys,

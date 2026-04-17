@@ -148,38 +148,10 @@ export function AuthFilesPage() {
       return;
     }
 
-    // Determine a model to test with based on provider.
-    // Keys match CLIProxyAPI's canonical Auth.Provider values;
-    // "gemini-cli" also handled via the "gemini" prefix lookup below.
-    const providerTestModels: Record<string, string> = {
-      antigravity: "gemini-2.5-flash",
-      claude: "claude-sonnet-4-5",
-      codex: "gpt-5.1-codex-mini",
-      deepseek: "deepseek-chat",
-      gemini: "gemini-2.5-flash",
-      iflow: "glm-4.5",
-      kimi: "kimi-k2.5",
-      qwen: "qwen3-coder-plus",
-      vertex: "gemini-2.5-flash",
-    };
-    const modelId =
-      providerTestModels[p] ??
-      Object.entries(providerTestModels).find(([key]) => p.includes(key))?.[1] ??
-      null;
-
-    if (!modelId) {
-      toastStore.error(
-        t("authFiles.toasts.unknownProviderCannotDetermineTestModel", {
-          provider: file.provider,
-        }),
-      );
-      return;
-    }
-
     setTestingProvider(file.name);
     try {
-      const { testProviderConnection } = await import("../lib/tauri");
-      const result = await testProviderConnection(modelId);
+      const { testAuthFileConnection } = await import("../lib/tauri");
+      const result = await testAuthFileConnection(file.id, file.provider);
       if (result.success) {
         toastStore.success(
           t("authFiles.toasts.connectionToProviderSuccessful", {
