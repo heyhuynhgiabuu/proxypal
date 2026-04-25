@@ -356,6 +356,8 @@ export function AdvancedSettings(props: AdvancedSettingsProps) {
         { label: "gpt-5", value: "gpt-5" },
         { label: "gpt-5.1", value: "gpt-5.1" },
         { label: "gpt-5.2", value: "gpt-5.2" },
+        { label: "gpt-5.5", value: "gpt-5.5" },
+        { label: "gpt-5.5-fast", value: "gpt-5.5-fast" },
         { label: "gpt-5-codex", value: "gpt-5-codex" },
         { label: "gpt-5-codex-mini", value: "gpt-5-codex-mini" },
         { label: "gpt-5.1-codex", value: "gpt-5.1-codex" },

@@ -244,6 +244,8 @@ export function SettingsPage() {
         { label: "gpt-5", value: "gpt-5" },
         { label: "gpt-5.1", value: "gpt-5.1" },
         { label: "gpt-5.2", value: "gpt-5.2" },
+        { label: "gpt-5.5", value: "gpt-5.5" },
+        { label: "gpt-5.5-fast", value: "gpt-5.5-fast" },
         // GPT-5 Codex models
         { label: "gpt-5-codex", value: "gpt-5-codex" },
         { label: "gpt-5-codex-mini", value: "gpt-5-codex-mini" },
