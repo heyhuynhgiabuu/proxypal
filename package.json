@@ -22,37 +22,53 @@
     "update-sidecar": "node scripts/update-sidecar.mjs --force"
   },
   "dependencies": {
-    "@kobalte/core": "^0.13.11",
-    "@kobalte/tailwindcss": "^0.9.0",
-    "@solid-primitives/i18n": "^2.2.1",
-    "@tauri-apps/api": "^2.10.1",
-    "@tauri-apps/plugin-dialog": "^2.6.0",
-    "@tauri-apps/plugin-fs": "^2.4.5",
-    "@tauri-apps/plugin-notification": "^2.3.3",
-    "@tauri-apps/plugin-opener": "^2.5.3",
-    "@tauri-apps/plugin-os": "^2.3.2",
-    "@tauri-apps/plugin-process": "^2.3.1",
-    "@tauri-apps/plugin-updater": "^2.10.0",
-    "chart.js": "^4.5.1",
-    "echarts": "^6.0.0",
-    "solid-echarts": "^0.0.4",
-    "solid-js": "^1.9.11"
+    "@kobalte/core": "0.13.11",
+    "@kobalte/tailwindcss": "0.9.0",
+    "@solid-primitives/i18n": "2.2.1",
+    "@tauri-apps/api": "2.10.1",
+    "@tauri-apps/plugin-dialog": "2.6.0",
+    "@tauri-apps/plugin-fs": "2.4.5",
+    "@tauri-apps/plugin-notification": "2.3.3",
+    "@tauri-apps/plugin-opener": "2.5.3",
+    "@tauri-apps/plugin-os": "2.3.2",
+    "@tauri-apps/plugin-process": "2.3.1",
+    "@tauri-apps/plugin-updater": "2.10.0",
+    "chart.js": "4.5.1",
+    "echarts": "6.0.0",
+    "solid-echarts": "0.0.4",
+    "solid-js": "1.9.11"
   },
   "devDependencies": {
-    "@nkzw/oxlint-config": "^1.0.1",
-    "@solidjs/router": "^0.15.4",
-    "@solidjs/testing-library": "^0.8.10",
-    "@tauri-apps/cli": "^2.10.0",
-    "@testing-library/jest-dom": "^6.9.1",
-    "autoprefixer": "^10.4.24",
-    "jsdom": "^28.1.0",
-    "oxfmt": "^0.34.0",
-    "oxlint": "^1.49.0",
-    "postcss": "^8.5.6",
-    "tailwindcss": "^3.4.19",
+    "@nkzw/oxlint-config": "1.0.1",
+    "@solidjs/router": "0.15.4",
+    "@solidjs/testing-library": "0.8.10",
+    "@tauri-apps/cli": "2.10.0",
+    "@testing-library/jest-dom": "6.9.1",
+    "autoprefixer": "10.4.24",
+    "jsdom": "29.0.2",
+    "oxfmt": "0.34.0",
+    "oxlint": "1.49.0",
+    "postcss": "8.5.6",
+    "tailwindcss": "3.4.19",
     "typescript": "~5.6.3",
-    "vite": "^6.4.1",
-    "vite-plugin-solid": "^2.11.10",
-    "vitest": "^4.0.18"
+    "vite": "6.4.2",
+    "vite-plugin-solid": "2.11.10",
+    "vitest": "4.0.18"
+  },
+  "pnpm": {
+    "overrides": {
+      "rollup": "4.59.0",
+      "minimatch@<3.1.4": "3.1.4",
+      "minimatch@>=9.0.0 <9.0.7": "9.0.7",
+      "brace-expansion@<1.1.13": "1.1.13",
+      "brace-expansion@>=4.0.0 <5.0.5": "5.0.5",
+      "picomatch@<2.3.2": "2.3.2",
+      "picomatch@>=4.0.0 <4.0.4": "4.0.4",
+      "flatted": "3.4.2",
+      "undici": "7.24.0"
+    },
+    "ignoredBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }

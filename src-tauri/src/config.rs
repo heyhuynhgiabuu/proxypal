@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+#[allow(unused_imports)]
+use crate::crypto;
+
 use crate::types::{
     amp::generate_uuid, cloudflare::CloudflareConfig, AmpModelMapping, AmpOpenAIProvider,
     ClaudeApiKey, CodexApiKey, CopilotConfig, GeminiApiKey, SshConfig, VertexApiKey,
@@ -217,6 +220,11 @@ pub fn get_auth_path() -> std::path::PathBuf {
     get_proxypal_config_dir().join("auth.json")
 }
 
+/// Encrypted secrets file path (stores API keys)
+pub fn get_secrets_path() -> std::path::PathBuf {
+    get_proxypal_config_dir().join("secrets.json")
+}
+
 /// Request history file path
 pub fn get_history_path() -> std::path::PathBuf {
     get_proxypal_config_dir().join("history.json")
@@ -294,13 +302,127 @@ fn load_config_from_path(path: &Path) -> AppConfig {
         let _ = save_config_to_path(path, &config);
     }
 
+    if let Some(secrets) = load_encrypted_secrets() {
+        if !config.gemini_api_keys.is_empty() && secrets.gemini_api_keys.is_empty() {
+            // API keys already in config, use them
+        } else if secrets.gemini_api_keys.is_empty() {
+            // No encrypted secrets yet, keep config keys
+        } else {
+            // Merge secrets (encrypted file takes precedence for API keys)
+            if secrets.gemini_api_keys.is_empty()
+                || secrets
+                    .gemini_api_keys
+                    .first()
+                    .map(|k| k.api_key.is_empty())
+                    .unwrap_or(true)
+            {
+                config.gemini_api_keys = secrets.gemini_api_keys;
+            }
+            if secrets.claude_api_keys.is_empty()
+                || secrets
+                    .claude_api_keys
+                    .first()
+                    .map(|k| k.api_key.is_empty())
+                    .unwrap_or(true)
+            {
+                config.claude_api_keys = secrets.claude_api_keys;
+            }
+            if secrets.codex_api_keys.is_empty()
+                || secrets
+                    .codex_api_keys
+                    .first()
+                    .map(|k| k.api_key.is_empty())
+                    .unwrap_or(true)
+            {
+                config.codex_api_keys = secrets.codex_api_keys;
+            }
+            if secrets.vertex_api_keys.is_empty()
+                || secrets
+                    .vertex_api_keys
+                    .first()
+                    .map(|k| k.api_key.is_empty())
+                    .unwrap_or(true)
+            {
+                config.vertex_api_keys = secrets.vertex_api_keys;
+            }
+        }
+    }
+
     config
 }
 
 /// Save config to file
 /// Uses atomic write (write to temp file then rename) to prevent corruption
 pub fn save_config_to_file(config: &AppConfig) -> Result<(), String> {
-    save_config_to_path(&get_config_path(), config)
+    save_config_to_path(&get_config_path(), config)?;
+    let _ = save_encrypted_secrets(config);
+    Ok(())
+}
+
+/// Save encrypted API keys to separate file
+pub fn save_encrypted_secrets(config: &AppConfig) -> Result<(), String> {
+    #[derive(Serialize)]
+    struct Secrets<'a> {
+        gemini_keys: &'a [GeminiApiKey],
+        claude_keys: &'a [ClaudeApiKey],
+        codex_keys: &'a [CodexApiKey],
+        vertex_keys: &'a [VertexApiKey],
+    }
+
+    let secrets = Secrets {
+        gemini_keys: &config.gemini_api_keys,
+        claude_keys: &config.claude_api_keys,
+        codex_keys: &config.codex_api_keys,
+        vertex_keys: &config.vertex_api_keys,
+    };
+
+    let encrypted = crate::crypto::encrypt_api_keyfields(&secrets)?;
+    let secrets_path = get_secrets_path();
+
+    let config_dir = secrets_path.parent().ok_or("Invalid secrets path")?;
+    std::fs::create_dir_all(config_dir).map_err(|e| e.to_string())?;
+
+    std::fs::write(&secrets_path, encrypted).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Load encrypted API keys from separate file
+pub fn load_encrypted_secrets() -> Option<AppConfig> {
+    let secrets_path = get_secrets_path();
+    if !secrets_path.exists() {
+        return None;
+    }
+
+    let encrypted = match std::fs::read_to_string(&secrets_path) {
+        Ok(data) => data,
+        Err(e) => {
+            eprintln!("[ProxyPal] Failed to read secrets file: {}", e);
+            return None;
+        }
+    };
+
+    #[derive(Deserialize)]
+    struct Secrets {
+        gemini_api_keys: Vec<GeminiApiKey>,
+        claude_api_keys: Vec<ClaudeApiKey>,
+        codex_api_keys: Vec<CodexApiKey>,
+        vertex_api_keys: Vec<VertexApiKey>,
+    }
+
+    let secrets: Secrets = match crate::crypto::decrypt_api_keyfields(&encrypted) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("[ProxyPal] Failed to decrypt secrets: {}", e);
+            return None;
+        }
+    };
+
+    let mut config = AppConfig::default();
+    config.gemini_api_keys = secrets.gemini_api_keys;
+    config.claude_api_keys = secrets.claude_api_keys;
+    config.codex_api_keys = secrets.codex_api_keys;
+    config.vertex_api_keys = secrets.vertex_api_keys;
+    Some(config)
 }
 
 pub(crate) fn save_config_to_path(path: &Path, config: &AppConfig) -> Result<(), String> {

@@ -53,7 +53,7 @@ fn convert_to_management_format<T: serde::Serialize>(data: &T) -> Result<serde_j
 
 #[tauri::command]
 pub async fn get_gemini_api_keys(state: State<'_, AppState>) -> Result<Vec<GeminiApiKey>, String> {
-    let port = state.config.lock().unwrap().port;
+    let port = state.config.lock().map_err(|e| format!("Failed to lock config: {}", e))?.port;
     let url = crate::get_management_url(port, "gemini-api-key");
     
     let client = crate::build_management_client();
@@ -74,7 +74,7 @@ pub async fn get_gemini_api_keys(state: State<'_, AppState>) -> Result<Vec<Gemin
 
 #[tauri::command]
 pub async fn set_gemini_api_keys(state: State<'_, AppState>, keys: Vec<GeminiApiKey>) -> Result<(), String> {
-    let port = state.config.lock().unwrap().port;
+    let port = state.config.lock().map_err(|e| format!("Config lock error: {}", e))?.port;
     let url = crate::get_management_url(port, "gemini-api-key");
     
     let client = crate::build_management_client();
@@ -96,7 +96,7 @@ pub async fn set_gemini_api_keys(state: State<'_, AppState>, keys: Vec<GeminiApi
     
     // Persist to ProxyPal config for restart persistence
     {
-        let mut config = state.config.lock().unwrap();
+        let mut config = state.config.lock().map_err(|e| format!("Config lock error: {}", e))?;
         config.gemini_api_keys = keys;
         save_config_to_file(&config)?;
     }
@@ -127,7 +127,7 @@ pub async fn delete_gemini_api_key(state: State<'_, AppState>, index: usize) -> 
 
 #[tauri::command]
 pub async fn get_claude_api_keys(state: State<'_, AppState>) -> Result<Vec<ClaudeApiKey>, String> {
-    let port = state.config.lock().unwrap().port;
+    let port = state.config.lock().map_err(|e| format!("Config lock error: {}", e))?.port;
     let url = crate::get_management_url(port, "claude-api-key");
     
     let client = crate::build_management_client();
@@ -148,7 +148,7 @@ pub async fn get_claude_api_keys(state: State<'_, AppState>) -> Result<Vec<Claud
 
 #[tauri::command]
 pub async fn set_claude_api_keys(state: State<'_, AppState>, keys: Vec<ClaudeApiKey>) -> Result<(), String> {
-    let port = state.config.lock().unwrap().port;
+    let port = state.config.lock().map_err(|e| format!("Config lock error: {}", e))?.port;
     let url = crate::get_management_url(port, "claude-api-key");
     
     let client = crate::build_management_client();
@@ -170,7 +170,7 @@ pub async fn set_claude_api_keys(state: State<'_, AppState>, keys: Vec<ClaudeApi
     
     // Persist to ProxyPal config for restart persistence
     {
-        let mut config = state.config.lock().unwrap();
+        let mut config = state.config.lock().map_err(|e| format!("Config lock error: {}", e))?;
         config.claude_api_keys = keys;
         save_config_to_file(&config)?;
     }
@@ -201,7 +201,7 @@ pub async fn delete_claude_api_key(state: State<'_, AppState>, index: usize) -> 
 
 #[tauri::command]
 pub async fn get_codex_api_keys(state: State<'_, AppState>) -> Result<Vec<CodexApiKey>, String> {
-    let port = state.config.lock().unwrap().port;
+    let port = state.config.lock().map_err(|e| format!("Config lock error: {}", e))?.port;
     let url = crate::get_management_url(port, "codex-api-key");
     
     let client = crate::build_management_client();
@@ -222,7 +222,7 @@ pub async fn get_codex_api_keys(state: State<'_, AppState>) -> Result<Vec<CodexA
 
 #[tauri::command]
 pub async fn set_codex_api_keys(state: State<'_, AppState>, keys: Vec<CodexApiKey>) -> Result<(), String> {
-    let port = state.config.lock().unwrap().port;
+    let port = state.config.lock().map_err(|e| format!("Config lock error: {}", e))?.port;
     let url = crate::get_management_url(port, "codex-api-key");
     
     let client = crate::build_management_client();
@@ -244,7 +244,7 @@ pub async fn set_codex_api_keys(state: State<'_, AppState>, keys: Vec<CodexApiKe
     
     // Persist to ProxyPal config for restart persistence
     {
-        let mut config = state.config.lock().unwrap();
+        let mut config = state.config.lock().map_err(|e| format!("Config lock error: {}", e))?;
         config.codex_api_keys = keys;
         save_config_to_file(&config)?;
     }
@@ -275,7 +275,7 @@ pub async fn delete_codex_api_key(state: State<'_, AppState>, index: usize) -> R
 
 #[tauri::command]
 pub async fn get_vertex_api_keys(state: State<'_, AppState>) -> Result<Vec<VertexApiKey>, String> {
-    let port = state.config.lock().unwrap().port;
+    let port = state.config.lock().map_err(|e| format!("Config lock error: {}", e))?.port;
     let url = crate::get_management_url(port, "vertex-api-key");
     
     let client = crate::build_management_client();
@@ -296,7 +296,7 @@ pub async fn get_vertex_api_keys(state: State<'_, AppState>) -> Result<Vec<Verte
 
 #[tauri::command]
 pub async fn set_vertex_api_keys(state: State<'_, AppState>, keys: Vec<VertexApiKey>) -> Result<(), String> {
-    let port = state.config.lock().unwrap().port;
+    let port = state.config.lock().map_err(|e| format!("Config lock error: {}", e))?.port;
     let url = crate::get_management_url(port, "vertex-api-key");
     
     let client = crate::build_management_client();
@@ -318,7 +318,7 @@ pub async fn set_vertex_api_keys(state: State<'_, AppState>, keys: Vec<VertexApi
     
     // Persist to ProxyPal config for restart persistence
     {
-        let mut config = state.config.lock().unwrap();
+        let mut config = state.config.lock().map_err(|e| format!("Config lock error: {}", e))?;
         config.vertex_api_keys = keys;
         save_config_to_file(&config)?;
     }
@@ -349,7 +349,7 @@ pub async fn delete_vertex_api_key(state: State<'_, AppState>, index: usize) -> 
 
 #[tauri::command]
 pub async fn get_openai_compatible_providers(state: State<'_, AppState>) -> Result<Vec<OpenAICompatibleProvider>, String> {
-    let port = state.config.lock().unwrap().port;
+    let port = state.config.lock().map_err(|e| format!("Config lock error: {}", e))?.port;
     let url = crate::get_management_url(port, "openai-compatibility");
     
     let client = crate::build_management_client();
@@ -370,7 +370,7 @@ pub async fn get_openai_compatible_providers(state: State<'_, AppState>) -> Resu
 
 #[tauri::command]
 pub async fn set_openai_compatible_providers(state: State<'_, AppState>, providers: Vec<OpenAICompatibleProvider>) -> Result<(), String> {
-    let port = state.config.lock().unwrap().port;
+    let port = state.config.lock().map_err(|e| format!("Config lock error: {}", e))?.port;
     let url = crate::get_management_url(port, "openai-compatibility");
     
     let client = crate::build_management_client();
@@ -392,7 +392,7 @@ pub async fn set_openai_compatible_providers(state: State<'_, AppState>, provide
     
     // Persist to local config for restart persistence
     {
-        let mut config = state.config.lock().unwrap();
+        let mut config = state.config.lock().map_err(|e| format!("Config lock error: {}", e))?;
         config.amp_openai_providers = providers.iter().map(|p| {
             crate::types::amp::AmpOpenAIProvider {
                 id: uuid::Uuid::new_v4().to_string(),
@@ -408,7 +408,7 @@ pub async fn set_openai_compatible_providers(state: State<'_, AppState>, provide
             }
         }).collect();
     }
-    let config_to_save = state.config.lock().unwrap().clone();
+    let config_to_save = state.config.lock().map_err(|e| format!("Config lock error: {}", e))?.clone();
     crate::config::save_config_to_file(&config_to_save)?;
     
     Ok(())

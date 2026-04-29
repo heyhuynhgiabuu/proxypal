@@ -45,6 +45,8 @@ reqwest = { version = "0.12", features = ["json", "multipart", "blocking"] }
 chrono = "0.4"
 regex = "1"
 lazy_static = "1"
+aes-gcm = "0.10"
+base64 = "0.22"
 uuid = { version = "1", features = ["v4"] }
 tauri-plugin-fs = "2.4.4"
 sysproxy = "0.3.0"

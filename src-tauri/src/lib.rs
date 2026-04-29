@@ -7,6 +7,7 @@ mod types;
 mod utils;
 mod ssh_manager;
 mod cloudflare_manager;
+mod crypto;
 
 use crate::config::{get_auth_path, load_config};
 use crate::helpers::migration::migrate_to_split_storage;
