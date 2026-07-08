@@ -42,6 +42,13 @@ export async function testProviderConnection(modelId: string): Promise<ProviderT
   return invoke("test_provider_connection", { modelId });
 }
 
+export async function testAuthFileConnection(
+  fileId: string,
+  fileProvider: string,
+): Promise<ProviderTestResult> {
+  return invoke("test_auth_file_connection", { fileId, fileProvider });
+}
+
 /** Test Kiro connection via kiro-cli chat --no-interactive "/usage". */
 export async function testKiroConnection(): Promise<ProviderTestResult> {
   return invoke("test_kiro_connection");
