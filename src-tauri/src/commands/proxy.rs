@@ -187,27 +187,87 @@ fn build_proxy_url_line(config: &AppConfig) -> String {
 fn build_openai_compat_section(config: &AppConfig) -> String {
     let mut entries = Vec::new();
 
-    // Custom providers
-    for provider in &config.amp_openai_providers {
-        if !provider.name.is_empty()
-            && !provider.base_url.is_empty()
-            && !provider.api_key.is_empty()
-        {
-            let mut entry = format!("  # Custom OpenAI-compatible provider: {}\n", provider.name);
+    // Prefer the rich format (API Keys page) when available
+    if !config.openai_compatible_providers.is_empty() {
+        for provider in &config.openai_compatible_providers {
+            if provider.name.is_empty() || provider.base_url.is_empty() {
+                continue;
+            }
+            if provider.api_key_entries.is_empty()
+                || provider.api_key_entries.iter().all(|e| e.api_key.is_empty())
+            {
+                continue;
+            }
+            let mut entry =
+                format!("  # OpenAI-compatible provider: {}\n", provider.name);
             entry.push_str(&format!("  - name: \"{}\"\n", provider.name));
             entry.push_str(&format!("    base-url: \"{}\"\n", provider.base_url));
             entry.push_str("    schema-cleaner: true\n");
+            if let Some(ref prefix) = provider.prefix {
+                if !prefix.is_empty() {
+                    entry.push_str(&format!("    prefix: \"{}\"\n", prefix));
+                }
+            }
+            if let Some(ref headers) = provider.headers {
+                if !headers.is_empty() {
+                    entry.push_str("    headers:\n");
+                    for (name, value) in headers {
+                        entry.push_str(&format!("      {}: \"{}\"\n", name, value));
+                    }
+                }
+            }
             entry.push_str("    api-key-entries:\n");
-            entry.push_str(&format!("      - api-key: \"{}\"\n", provider.api_key));
-
-            if !provider.models.is_empty() {
-                entry.push_str("    models:\n");
-                for model in &provider.models {
-                    entry.push_str(&format!("      - alias: \"{}\"\n", model.alias));
-                    entry.push_str(&format!("        name: \"{}\"\n", model.name));
+            for key_entry in &provider.api_key_entries {
+                if key_entry.api_key.is_empty() {
+                    continue;
+                }
+                entry.push_str(&format!("      - api-key: \"{}\"\n", key_entry.api_key));
+                if let Some(ref proxy_url) = key_entry.proxy_url {
+                    if !proxy_url.is_empty() {
+                        entry.push_str(&format!("        proxy-url: \"{}\"\n", proxy_url));
+                    }
+                }
+            }
+            if let Some(ref models) = provider.models {
+                if !models.is_empty() {
+                    entry.push_str("    models:\n");
+                    for model in models {
+                        let alias = model
+                            .alias
+                            .as_deref()
+                            .filter(|a| !a.is_empty())
+                            .unwrap_or(&model.name);
+                        entry.push_str(&format!("      - alias: \"{}\"\n", alias));
+                        entry.push_str(&format!("        name: \"{}\"\n", model.name));
+                    }
                 }
             }
             entries.push(entry);
+        }
+    } else {
+        // Fall back to legacy flat format (Settings page)
+        for provider in &config.amp_openai_providers {
+            if !provider.name.is_empty()
+                && !provider.base_url.is_empty()
+                && !provider.api_key.is_empty()
+            {
+                let mut entry =
+                    format!("  # Custom OpenAI-compatible provider: {}\n", provider.name);
+                entry.push_str(&format!("  - name: \"{}\"\n", provider.name));
+                entry.push_str(&format!("    base-url: \"{}\"\n", provider.base_url));
+                entry.push_str("    schema-cleaner: true\n");
+                entry.push_str("    api-key-entries:\n");
+                entry.push_str(&format!("      - api-key: \"{}\"\n", provider.api_key));
+
+                if !provider.models.is_empty() {
+                    entry.push_str("    models:\n");
+                    for model in &provider.models {
+                        entry.push_str(&format!("      - alias: \"{}\"\n", model.alias));
+                        entry.push_str(&format!("        name: \"{}\"\n", model.name));
+                    }
+                }
+                entries.push(entry);
+            }
         }
     }
 
@@ -294,6 +354,11 @@ fn build_claude_api_key_section(config: &AppConfig) -> String {
                 entry.push_str(&format!("    proxy-url: \"{}\"\n", proxy_url));
             }
         }
+        if let Some(ref prefix) = key.prefix {
+            if !prefix.is_empty() {
+                entry.push_str(&format!("    prefix: \"{}\"\n", prefix));
+            }
+        }
         entries.push(entry);
     }
 
@@ -325,6 +390,11 @@ fn build_gemini_api_key_section(config: &AppConfig) -> String {
                 section.push_str(&format!("    proxy-url: \"{}\"\n", proxy_url));
             }
         }
+        if let Some(ref prefix) = key.prefix {
+            if !prefix.is_empty() {
+                section.push_str(&format!("    prefix: \"{}\"\n", prefix));
+            }
+        }
     }
     section.push('\n');
     section
@@ -343,6 +413,11 @@ fn build_codex_api_key_section(config: &AppConfig) -> String {
         if let Some(ref proxy_url) = key.proxy_url {
             if !proxy_url.is_empty() {
                 section.push_str(&format!("    proxy-url: \"{}\"\n", proxy_url));
+            }
+        }
+        if let Some(ref prefix) = key.prefix {
+            if !prefix.is_empty() {
+                section.push_str(&format!("    prefix: \"{}\"\n", prefix));
             }
         }
     }

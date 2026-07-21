@@ -5,7 +5,8 @@ use uuid::Uuid;
 
 use crate::types::{
     amp::generate_uuid, cloudflare::CloudflareConfig, AmpModelMapping, AmpOpenAIProvider,
-    ClaudeApiKey, CodexApiKey, CopilotConfig, GeminiApiKey, SshConfig, VertexApiKey, XaiApiKey,
+    ClaudeApiKey, CodexApiKey, CopilotConfig, GeminiApiKey, OpenAICompatibleProvider, SshConfig,
+    VertexApiKey, XaiApiKey,
 };
 
 /// App configuration persisted to config.json
@@ -91,6 +92,8 @@ pub struct AppConfig {
     pub locale: String,
     #[serde(default)]
     pub ssh_configs: Vec<SshConfig>,
+    #[serde(default)]
+    pub openai_compatible_providers: Vec<OpenAICompatibleProvider>,
     #[serde(default)]
     pub cloudflare_configs: Vec<CloudflareConfig>,
     #[serde(default = "default_disable_control_panel")]
@@ -189,6 +192,7 @@ impl Default for AppConfig {
             ws_auth: true,
             locale: "en".to_string(),
             ssh_configs: Vec::new(),
+            openai_compatible_providers: Vec::new(),
             cloudflare_configs: Vec::new(),
             disable_control_panel: true,
         }

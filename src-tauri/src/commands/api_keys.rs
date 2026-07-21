@@ -573,6 +573,9 @@ pub async fn set_openai_compatible_providers(
     // Persist to local config for restart persistence
     {
         let mut config = state.config.lock().unwrap();
+        // Full rich format (API Keys page)
+        config.openai_compatible_providers = normalized_providers.clone();
+        // Backward compat: also write flattened format (Settings page)
         config.amp_openai_providers = normalized_providers
             .iter()
             .map(|p| crate::types::amp::AmpOpenAIProvider {

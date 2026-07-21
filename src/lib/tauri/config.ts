@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
-import type { XaiApiKey } from "./api-keys";
+import type { OpenAICompatibleProvider, XaiApiKey } from "./api-keys";
 import type { CloudflareConfig } from "./cloudflare";
 import type { AmpOpenAIProvider, CopilotConfig } from "./models";
 import type { SshConfig } from "./ssh";
@@ -22,6 +22,7 @@ export interface AppConfig {
   ampRoutingMode?: string;
   autoStart: boolean;
   cloudflareConfigs?: CloudflareConfig[];
+  openaiCompatibleProviders?: OpenAICompatibleProvider[];
   commercialMode?: boolean;
   copilot: CopilotConfig;
   debug: boolean;
