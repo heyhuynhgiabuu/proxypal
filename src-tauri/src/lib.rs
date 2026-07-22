@@ -123,12 +123,48 @@ fn handle_deep_link(app: &tauri::AppHandle, urls: Vec<url::Url>) {
             }
 
             // Bring window to front
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize();
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+            show_main_window(app);
         }
+    }
+}
+
+// macOS tray-app lifecycle helpers. Per Tauri best practices (see
+// https://dev.to/hiyoyok/complete-guide-to-building-a-macos-menu-bar-app-with-tauri-v2-aji
+// and Tauri 2.10 AppHandle docs):
+//   show → set_dock_visibility(true) + app.show() + window.show + focus
+//   hide → window.hide() + app.hide() + set_dock_visibility(false)
+// app.show()/hide() call NSApplication.show()/hide() so the app vanishes
+// from Mission Control and the app switcher when in tray, and WKWebView
+// backing store refills on show (fixes black window).
+
+// Show the main window and focus it. On macOS, reveals the Dock icon,
+// restores NSApplication (fixing WKWebView stale backing store), then
+// unminimizes, shows, and focuses the window.
+#[allow(dead_code)]
+fn show_main_window(app: &tauri::AppHandle) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app.set_dock_visibility(true);
+        let _ = app.show();
+    }
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+// Hide the main window and, on macOS, the whole NSApplication.
+// Removes the Dock icon and hides from Mission Control / app switcher.
+#[allow(dead_code)]
+fn hide_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.hide();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app.hide();
+        let _ = app.set_dock_visibility(false);
     }
 }
 
@@ -165,11 +201,7 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 let _ = app.emit("tray-toggle-proxy", !is_running);
             }
             "dashboard" => {
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.unminimize();
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
+                show_main_window(app);
             }
             "quit" => {
                 app.exit(0);
@@ -184,11 +216,7 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             } = event
             {
                 let app = tray.app_handle();
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.unminimize();
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
+                show_main_window(app);
             }
         })
         .build(app)?;
@@ -300,11 +328,7 @@ pub fn run() {
             }
 
             // Show existing window
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize();
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+            show_main_window(app);
         }))
         .manage(app_state)
         .manage(SshManager::new())
@@ -519,10 +543,8 @@ pub fn run() {
 
                             if close_to_tray {
                                 // Hide to tray instead of closing
-                                if let Some(window) = app_handle.get_webview_window("main") {
-                                    println!("[ProxyPal] Hiding to system tray...");
-                                    let _ = window.hide();
-                                }
+                                println!("[ProxyPal] Hiding to system tray...");
+                                hide_main_window(app_handle);
                                 api.prevent_close();
                             }
                             // If close_to_tray is false, allow normal close behavior
