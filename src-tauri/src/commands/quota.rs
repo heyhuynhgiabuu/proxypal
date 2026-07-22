@@ -290,8 +290,11 @@ pub async fn fetch_antigravity_quota() -> Result<Vec<crate::types::AntigravityQu
                                             "gemini-3-flash-preview" => "Gemini 3 Flash",
                                             "gemini-3.1-pro-high" => "Gemini 3.1 Pro High",
                                             "gemini-3.1-pro-low" => "Gemini 3.1 Pro Low",
-                                            // Gemini 3.5 models (from Antigravity API)
+                                            // Gemini 3.5/3.6 models (from Antigravity API)
                                             "gemini-3.5-flash" | "3.5-flash" => "Gemini 3.5 Flash",
+                                            "gemini-3.6-flash-high" | "3.6-flash-high" => {
+                                                "Gemini 3.6 Flash High"
+                                            }
                                             // Claude models via Antigravity
                                             "claude-sonnet-4-5" | "claude-sonnet-4-5-thinking" => {
                                                 "Claude Sonnet 4.5"

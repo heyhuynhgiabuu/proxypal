@@ -547,6 +547,10 @@ fn build_gemini_override_section(thinking_level: &str) -> String {
         - name: "gemini-3.5-flash-low*"
       params:
         generationConfig.thinkingConfig.thinkingLevel: "low"
+    - models:
+        - name: "gemini-3.6-flash-high*"
+      params:
+        generationConfig.thinkingConfig.thinkingLevel: "high"
 "#,
         thinking_level
     )
@@ -1010,6 +1014,19 @@ mod tests {
             "Expected host: \"127.0.0.1\", got:\n{}",
             yaml
         );
+    }
+
+    #[test]
+    fn build_proxy_config_yaml_forces_high_thinking_for_gemini_3_6_flash_high() {
+        let config = crate::config::AppConfig::default();
+        let config_dir = std::path::PathBuf::from("/tmp/proxypal-test-gemini-3-6");
+        let auth_dir = std::path::PathBuf::from("/tmp/.cli-proxy-api-test");
+        let yaml = build_proxy_config_yaml(&config, &config_dir, &auth_dir, "").unwrap();
+
+        let (_, override_rule) = yaml
+            .split_once("name: \"gemini-3.6-flash-high*\"")
+            .expect("expected a Gemini 3.6 high override");
+        assert!(override_rule.contains("generationConfig.thinkingConfig.thinkingLevel: \"high\""));
     }
 
     #[test]

@@ -29,6 +29,10 @@ pub struct DeviceCodeResponse {
 
 fn unsupported_mainline_oauth_error(provider: &str) -> Option<String> {
     match provider {
+        "gemini" => Some(
+            "Gemini OAuth is not available in the bundled mainline CLIProxyAPI sidecar. Configure a Gemini API key in the API Keys page."
+                .to_string(),
+        ),
         "qwen" => Some(
             "Qwen OAuth is not available in the bundled mainline CLIProxyAPI sidecar. Use a custom OpenAI-compatible provider or a Plus sidecar build that exposes Qwen auth."
                 .to_string(),
@@ -558,4 +562,18 @@ pub async fn disconnect_provider(
     let _ = app.emit("auth-status-changed", auth.clone());
 
     Ok(auth.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gemini_oauth_reports_the_supported_api_key_setup() {
+        let error = unsupported_mainline_oauth_error("gemini")
+            .expect("Gemini OAuth must be rejected before requesting a removed sidecar endpoint");
+
+        assert!(error.contains("Gemini API key"));
+        assert!(error.contains("API Keys"));
+    }
 }
