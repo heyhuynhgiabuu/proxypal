@@ -88,10 +88,13 @@ this PR makes OpenAI-compatible behave identically.
 
 ## Components & changes
 
-### 1. `src-tauri/src/commands/api_keys.rs` — stop writing the flat copy
-In `set_openai_compatible_providers`, remove the block that derives and writes
-`config.amp_openai_providers`. Write **only** `config.openai_compatible_providers`.
-This is the single change that removes the duplication the owner flagged.
+### 1. `src-tauri/src/commands/api_keys.rs` — NO change (already a derived mirror)
+The existing `set_openai_compatible_providers` derives `amp_openai_providers` from
+the rich list it just wrote — i.e. amp is a **derived flat mirror**, not an
+independent source. That derivation is correct and must stay: it keeps the
+Settings UI (which reads `ampOpenaiProviders`) fresh within the same session
+after an API Keys edit. The real defect is only in the **Settings write path**
+(`save_config`), addressed in §4 below.
 
 ### 2. `src-tauri/src/commands/proxy.rs` — generator reads rich only
 - `build_openai_compat_section`: delete the `else` fallback branch that reads
@@ -120,19 +123,24 @@ and `fn rich_to_amp(rich: &[OpenAICompatibleProvider]) -> Vec<AmpOpenAIProvider>
 unit-testable. This IS the "explicit synchronization at every write path" the
 owner asked for, concentrated in one place.
 
-### 4. `src-tauri/src/commands/config.rs` — Settings write path normalizes
-In `save_config`, after receiving the `AppConfig` from the frontend and before
-`persist_config`:
-- If the frontend sent a populated `amp_openai_providers` and empty
-  `openai_compatible_providers` (the Settings case): call the shared
-  `amp_to_rich` helper to populate rich, then `rich_to_amp` to refresh amp as a
-  faithful flattened mirror. This guarantees Settings edits land in the
-  canonical field and the generator picks them up.
-- If both are populated (mixed/edge): treat amp as the Settings intent for
-  providers that exist in amp, but **preserve** rich-only fields (prefix,
-  headers, extra keys) for providers matched by name+baseUrl. Reconciliation by
-  `(name, base_url)` key. New amp providers become new rich entries (single key,
-  no prefix). Removed amp providers remove the matching rich entry.
+### 4. `src-tauri/src/commands/config.rs` — Settings write path lifts amp → rich (root cause fix)
+**This is the core fix Defect C.** `save_config` currently persists whatever
+`amp_openai_providers` the Settings UI sent and never touches rich, so rich goes
+stale and the generator ignores Settings edits. Fix: before `persist_config`, if
+the incoming config has `openai_compatible_providers` empty (the signal the
+frontend sends, see §5) and `amp_openai_providers` non-empty:
+- For each `AmpOpenAIProvider`, look up a matching existing in-state rich entry
+  by `(name, base_url)`. If matched, keep that rich entry but **replace its
+  `api_key_entries`** with `[{ api_key: amp.api_key }]` — this preserves the
+  rich-only fields (`prefix`, `headers`, extra keys above the first, per-key
+  `proxy_url`) that the Settings UI cannot edit. If not matched, create a new
+  rich entry via `amp_to_rich` (single key, no prefix). Rich entries with no
+  amp match are dropped (the Settings intent is authoritative for the set).
+- Then set `amp_openai_providers = rich_to_amp(rich)` so the flat mirror is
+  faithful to the lifted rich.
+Reconciliation by `(name, base_url)` is a heuristic with a known ceiling: two
+providers with the same name+baseUrl would collide. Mark it `ponytail:` in the
+code. The UI already dedupes by name, so this is acceptable.
 
 ### 5. Frontend — `src/components/settings/OpenAIProviderSettings.tsx`
 `saveOpenAIProvider` / `deleteOpenAIProvider` continue to mutate `ampOpenaiProviders`
