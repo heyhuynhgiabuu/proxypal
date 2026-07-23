@@ -129,13 +129,13 @@ owner asked for, concentrated in one place.
 stale and the generator ignores Settings edits. Fix: before `persist_config`, if
 the incoming config has `openai_compatible_providers` empty (the signal the
 frontend sends, see §5) and `amp_openai_providers` non-empty:
-- For each `AmpOpenAIProvider`, look up a matching existing in-state rich entry
-  by `(name, base_url)`. If matched, keep that rich entry but **replace its
-  `api_key_entries`** with `[{ api_key: amp.api_key }]` — this preserves the
-  rich-only fields (`prefix`, `headers`, extra keys above the first, per-key
-  `proxy_url`) that the Settings UI cannot edit. If not matched, create a new
-  rich entry via `amp_to_rich` (single key, no prefix). Rich entries with no
-  amp match are dropped (the Settings intent is authoritative for the set).
+- For each `AmpOpenAIProvider`, look up a matching in-state rich entry
+  by `(name, base_url)`. If matched, **update the first entry's `api_key`** to
+  `amp.api_key` and keep any additional entries (per-key `proxy_url` across
+  extras) and the rich-only `prefix`/`headers` intact — Settings never silently
+  destroys keys it cannot display. If not matched, create a new rich entry via
+  `amp_to_rich` (single key, no prefix). Rich entries with no amp match are
+  dropped (the Settings intent is authoritative for the provider set).
 - Then set `amp_openai_providers = rich_to_amp(rich)` so the flat mirror is
   faithful to the lifted rich.
 Reconciliation by `(name, base_url)` is a heuristic with a known ceiling: two
