@@ -48,6 +48,18 @@ pub fn save_config(state: State<AppState>, config: AppConfig) -> Result<(), Stri
         }
     }
 
+    // Settings writes only the flat amp field with rich empty. Lift it into the canonical
+    // rich field, merging with the currently-persisted rich so multi-key/prefix/headers
+    // the Settings form can't display are preserved (Defect C root fix).
+    let current_rich = state
+        .config
+        .lock()
+        .unwrap()
+        .openai_compatible_providers
+        .clone();
+    let mut config = config;
+    crate::config::lift_amp_to_rich(&mut config, &current_rich);
+
     persist_config(&config)?;
 
     let mut current_config = state.config.lock().unwrap();
