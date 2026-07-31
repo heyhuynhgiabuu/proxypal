@@ -286,7 +286,20 @@ fn migrate_config(config: &mut AppConfig) -> bool {
 
 fn load_config_from_path(path: &Path) -> AppConfig {
     if !path.exists() {
-        return AppConfig::default();
+        // Persist the generated defaults immediately. `management_key` is minted by
+        // `new_management_key()` on every `AppConfig::default()`, so without this every
+        // `load_config()` returns a different key: the value written into
+        // proxy-config.yaml's `remote-management.secret-key` could never match the
+        // `X-Management-Key` header, and CLIProxyAPI would ban the client after 5 tries.
+        let config = AppConfig::default();
+        if let Err(e) = save_config_to_path(path, &config) {
+            eprintln!(
+                "[ProxyPal] Failed to persist initial config '{}': {}",
+                path.display(),
+                e
+            );
+        }
+        return config;
     }
 
     let data = match std::fs::read_to_string(path) {
@@ -404,6 +417,28 @@ mod tests {
             loaded.routing_strategy,
             AppConfig::default().routing_strategy
         );
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn load_config_from_missing_file_persists_a_stable_management_key() {
+        let dir = test_dir("config-missing-persist");
+        let path = dir.join("config.json");
+
+        let first = load_config_from_path(&path);
+        assert!(
+            path.exists(),
+            "defaults must be persisted on first load so the generated key is stable"
+        );
+
+        let second = load_config_from_path(&path);
+        assert_eq!(
+            first.management_key, second.management_key,
+            "management key must not change between loads; the key written to \
+             proxy-config.yaml has to match the one sent in X-Management-Key"
+        );
+        assert_eq!(first.proxy_api_key, second.proxy_api_key);
 
         let _ = fs::remove_dir_all(dir);
     }
