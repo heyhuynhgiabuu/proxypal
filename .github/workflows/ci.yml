@@ -61,6 +61,14 @@ jobs:
           ANTIGRAVITY_CLIENT_ID: ${{ secrets.ANTIGRAVITY_CLIENT_ID }}
           ANTIGRAVITY_CLIENT_SECRET: ${{ secrets.ANTIGRAVITY_CLIENT_SECRET }}
 
+      - name: Rust tests
+        run: cargo test --lib
+        working-directory: src-tauri
+        env:
+          PROXYPAL_SKIP_SIDECAR: "1"
+          ANTIGRAVITY_CLIENT_ID: ${{ secrets.ANTIGRAVITY_CLIENT_ID }}
+          ANTIGRAVITY_CLIENT_SECRET: ${{ secrets.ANTIGRAVITY_CLIENT_SECRET }}
+
   build:
     name: Build (${{ matrix.platform }})
     needs: check

@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use std::sync::RwLock;
 
 use uuid::Uuid;
 
@@ -145,6 +146,91 @@ fn new_management_key() -> String {
     format!("proxypal-{}", Uuid::new_v4())
 }
 
+/// The management key that predates per-install keys. Treated as "no key".
+const LEGACY_MANAGEMENT_KEY: &str = "proxypal-mgmt-key";
+
+/// Process-wide holder for the management key.
+///
+/// The key written into the generated proxy YAML and the key sent on every
+/// `X-Management-Key` header must be the same value, or CLIProxyAPI rejects the
+/// request with `401 invalid management key` and bans the caller after five
+/// tries. Every code path below can otherwise mint a fresh `Uuid` — a missing
+/// file, a missing field, a parse error, a read error — so both sides read from
+/// one store instead of re-deriving the key from disk per request.
+pub(crate) struct KeyStore(RwLock<Option<String>>);
+
+impl KeyStore {
+    pub(crate) const fn new() -> Self {
+        Self(RwLock::new(None))
+    }
+
+    /// Return the held key, adopting `candidate` only if nothing is held yet.
+    ///
+    /// First writer wins: concurrent first loads converge on one value, and a
+    /// key already in use is never swapped out from under a running sidecar.
+    pub(crate) fn resolve(&self, candidate: Option<&str>) -> String {
+        if let Some(existing) = self.read().as_ref() {
+            return existing.clone();
+        }
+        // Re-check under the write lock; another thread may have won the race.
+        let mut slot = self.0.write().unwrap_or_else(|p| p.into_inner());
+        if let Some(existing) = slot.as_ref() {
+            return existing.clone();
+        }
+        let key = match candidate {
+            Some(c) if !c.trim().is_empty() && c != LEGACY_MANAGEMENT_KEY => c.to_string(),
+            _ => new_management_key(),
+        };
+        *slot = Some(key.clone());
+        key
+    }
+
+    /// Replace the held key. Used when the user edits it in Settings.
+    pub(crate) fn set(&self, key: String) {
+        *self.0.write().unwrap_or_else(|p| p.into_inner()) = Some(key);
+    }
+
+    fn read(&self) -> std::sync::RwLockReadGuard<'_, Option<String>> {
+        self.0.read().unwrap_or_else(|p| p.into_inner())
+    }
+}
+
+static MANAGEMENT_KEY: KeyStore = KeyStore::new();
+
+/// The management key for this process — the single source used for both the
+/// generated proxy YAML and every management request header.
+///
+/// If nothing is held yet this seeds from the persisted config rather than
+/// minting on the spot, so a caller that runs before startup's `load_config()`
+/// cannot mint a throwaway key and have it overwrite the user's stored one.
+/// Costs at most one read for the life of the process.
+pub fn management_key() -> String {
+    if let Some(existing) = MANAGEMENT_KEY.read().as_ref() {
+        return existing.clone();
+    }
+    load_config().management_key
+}
+
+/// Reconcile a config coming from the UI with the key this process signs with.
+///
+/// A deliberate, non-empty change is adopted so the headers follow the value the
+/// sidecar is restarted with. A blank or legacy value is replaced with the key
+/// already in use, so a round-tripped config cannot silently rotate it.
+pub fn reconcile_management_key(config: &mut AppConfig) {
+    reconcile_management_key_with(config, &MANAGEMENT_KEY);
+}
+
+fn reconcile_management_key_with(config: &mut AppConfig, store: &KeyStore) {
+    let incoming = config.management_key.trim();
+    if incoming.is_empty() || incoming == LEGACY_MANAGEMENT_KEY {
+        config.management_key = store.resolve(None);
+    } else {
+        let incoming = incoming.to_string();
+        store.set(incoming.clone());
+        config.management_key = incoming;
+    }
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -245,12 +331,9 @@ pub fn load_config() -> AppConfig {
 fn migrate_config(config: &mut AppConfig) -> bool {
     let mut changed = false;
 
-    // Migrate legacy management key to a unique UUID-backed key
-    if config.management_key == "proxypal-mgmt-key" {
-        eprintln!("[ProxyPal] Migrating legacy management key to a unique key...");
-        config.management_key = new_management_key();
-        changed = true;
-    }
+    // Legacy management keys are handled in `KeyStore::resolve`, which treats
+    // LEGACY_MANAGEMENT_KEY as "no key" so a unique one is minted and persisted.
+    // Doing it there keeps one owner for the key across every load path.
 
     // Migrate deprecated single amp_openai_provider to providers array
     if let Some(old_provider) = config.amp_openai_provider.take() {
@@ -285,49 +368,89 @@ fn migrate_config(config: &mut AppConfig) -> bool {
 }
 
 fn load_config_from_path(path: &Path) -> AppConfig {
-    if !path.exists() {
-        // Persist the generated defaults immediately. `management_key` is minted by
-        // `new_management_key()` on every `AppConfig::default()`, so without this every
-        // `load_config()` returns a different key: the value written into
-        // proxy-config.yaml's `remote-management.secret-key` could never match the
-        // `X-Management-Key` header, and CLIProxyAPI would ban the client after 5 tries.
-        let config = AppConfig::default();
-        if let Err(e) = save_config_to_path(path, &config) {
-            eprintln!(
-                "[ProxyPal] Failed to persist initial config '{}': {}",
-                path.display(),
-                e
-            );
-        }
-        return config;
-    }
+    load_config_from_path_with(path, &MANAGEMENT_KEY)
+}
 
-    let data = match std::fs::read_to_string(path) {
-        Ok(data) => data,
-        Err(e) => {
-            eprintln!(
-                "[ProxyPal] Failed to read config file '{}': {}. Falling back to defaults.",
-                path.display(),
-                e
-            );
-            return AppConfig::default();
+/// Load config, guaranteeing the returned `management_key` is the one `store`
+/// holds for this process, and persisting it when the file can be rewritten
+/// safely.
+///
+/// `store` is a parameter so tests can exercise the fallbacks in isolation
+/// rather than sharing the process-wide key.
+fn load_config_from_path_with(path: &Path, store: &KeyStore) -> AppConfig {
+    let existed = path.exists();
+
+    let data = if existed {
+        match std::fs::read_to_string(path) {
+            Ok(data) => Some(data),
+            Err(e) => {
+                eprintln!(
+                    "[ProxyPal] Failed to read config file '{}': {}. Falling back to defaults.",
+                    path.display(),
+                    e
+                );
+                None
+            }
         }
+    } else {
+        None
     };
 
-    let mut config = match serde_json::from_str::<AppConfig>(&data) {
-        Ok(config) => config,
-        Err(e) => {
+    // Probe the raw JSON separately: `#[serde(default = "default_management_key")]`
+    // mints a fresh UUID for an absent field, which is indistinguishable from a
+    // real one once deserialized.
+    let stored_key = data.as_deref().and_then(|d| {
+        serde_json::from_str::<serde_json::Value>(d)
+            .ok()
+            .and_then(|v| {
+                v.get("managementKey")
+                    .and_then(|k| k.as_str())
+                    .map(str::to_string)
+            })
+    });
+
+    let mut parsed_cleanly = false;
+    let mut config = match data.as_deref().map(serde_json::from_str::<AppConfig>) {
+        Some(Ok(config)) => {
+            parsed_cleanly = true;
+            config
+        }
+        Some(Err(e)) => {
             eprintln!(
                 "[ProxyPal] Failed to parse config file '{}': {}. Falling back to defaults.",
                 path.display(),
                 e
             );
-            return AppConfig::default();
+            AppConfig::default()
         }
+        None => AppConfig::default(),
     };
 
-    if migrate_config(&mut config) {
-        let _ = save_config_to_path(path, &config);
+    let resolved = store.resolve(stored_key.as_deref());
+    let key_changed = config.management_key != resolved;
+    config.management_key = resolved;
+
+    let migrated = migrate_config(&mut config);
+
+    // Rewrite only when the file is absent or parsed cleanly. A malformed or
+    // unreadable file is left alone — it may still hold recoverable settings,
+    // and the key is stable for this process regardless.
+    let writable = !existed || parsed_cleanly;
+    if writable && (!existed || key_changed || migrated) {
+        if let Err(e) = save_config_to_path(path, &config) {
+            eprintln!(
+                "[ProxyPal] Failed to persist config '{}': {}. \
+                 The management key is stable for this session but will not survive a restart.",
+                path.display(),
+                e
+            );
+        }
+    } else if !writable {
+        eprintln!(
+            "[ProxyPal] Leaving unreadable config '{}' untouched. \
+             Using a session-local management key; fix or remove the file to persist one.",
+            path.display()
+        );
     }
 
     config
@@ -355,8 +478,10 @@ pub(crate) fn save_config_to_path(path: &Path, config: &AppConfig) -> Result<(),
     let data = serde_json::to_string_pretty(config)
         .map_err(|e| format!("Failed to serialize config: {}", e))?;
 
-    // Write to temporary file first, then rename for atomic write
-    let temp_path = path.with_extension("tmp");
+    // Write to temporary file first, then rename for atomic write.
+    // The temp name is unique per write so concurrent savers cannot land on the
+    // same scratch file and interleave each other's bytes.
+    let temp_path = path.with_extension(format!("tmp-{}", Uuid::new_v4()));
 
     // Try writing to temp file with retry for Windows file locking issues
     let mut last_error = String::new();
@@ -416,6 +541,224 @@ mod tests {
         assert_eq!(
             loaded.routing_strategy,
             AppConfig::default().routing_strategy
+        );
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_key_edited_in_settings_becomes_the_process_key() {
+        // Issue #89: the sidecar is restarted with the new key, so the headers
+        // must follow or every management call 401s afterwards.
+        let store = KeyStore::new();
+        store.set("proxypal-old".to_string());
+        let mut config = AppConfig {
+            management_key: "proxypal-user-chose-this".to_string(),
+            ..AppConfig::default()
+        };
+
+        reconcile_management_key_with(&mut config, &store);
+
+        assert_eq!(config.management_key, "proxypal-user-chose-this");
+        assert_eq!(store.resolve(None), "proxypal-user-chose-this");
+    }
+
+    #[test]
+    fn a_blank_key_from_the_ui_keeps_the_key_in_use() {
+        let store = KeyStore::new();
+        store.set("proxypal-in-use".to_string());
+        let mut config = AppConfig {
+            management_key: "   ".to_string(),
+            ..AppConfig::default()
+        };
+
+        reconcile_management_key_with(&mut config, &store);
+
+        assert_eq!(
+            config.management_key, "proxypal-in-use",
+            "a round-tripped config missing the key must not rotate it"
+        );
+    }
+
+    #[test]
+    fn existing_config_without_management_key_gets_one_persisted() {
+        let dir = test_dir("config-no-key");
+        let path = dir.join("config.json");
+        // A realistic upgrade path: an old config that predates `managementKey`.
+        fs::write(
+            &path,
+            r#"{"port":8317,"autoStart":true,"launchAtLogin":false,"locale":"fr"}"#,
+        )
+        .unwrap();
+        let store = KeyStore::new();
+
+        let first = load_config_from_path_with(&path, &store);
+        let second = load_config_from_path_with(&path, &store);
+
+        assert!(!first.management_key.is_empty());
+        assert_eq!(
+            first.management_key, second.management_key,
+            "a config lacking managementKey must have one written, not regenerated per load"
+        );
+        let on_disk: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(
+            on_disk.get("managementKey").and_then(|v| v.as_str()),
+            Some(first.management_key.as_str()),
+            "the key must be written back to disk"
+        );
+        assert_eq!(
+            on_disk.get("locale").and_then(|v| v.as_str()),
+            Some("fr"),
+            "unrelated settings must be preserved when backfilling the key"
+        );
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn malformed_config_still_yields_one_stable_key_and_keeps_the_file() {
+        let dir = test_dir("config-malformed");
+        let path = dir.join("config.json");
+        fs::write(&path, "{ not valid json").unwrap();
+        let store = KeyStore::new();
+
+        let first = load_config_from_path_with(&path, &store);
+        let second = load_config_from_path_with(&path, &store);
+
+        assert_eq!(
+            first.management_key, second.management_key,
+            "a malformed config must not produce a different key on every load"
+        );
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            "{ not valid json",
+            "a malformed config must not be clobbered — it may be user-recoverable"
+        );
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn unreadable_config_still_yields_one_stable_key() {
+        let dir = test_dir("config-unreadable");
+        let path = dir.join("config.json");
+        fs::write(&path, "{}").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
+        }
+        let store = KeyStore::new();
+
+        let first = load_config_from_path_with(&path, &store);
+        let second = load_config_from_path_with(&path, &store);
+
+        assert_eq!(
+            first.management_key, second.management_key,
+            "an unreadable config must not produce a different key on every load"
+        );
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o644));
+        }
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn persistence_failure_is_reported_not_swallowed() {
+        let dir = test_dir("config-readonly");
+        let sub = dir.join("locked");
+        fs::create_dir_all(&sub).unwrap();
+        let path = sub.join("config.json");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&sub, fs::Permissions::from_mode(0o500)).unwrap();
+        }
+
+        let result = save_config_to_path(&path, &AppConfig::default());
+
+        #[cfg(unix)]
+        assert!(
+            result.is_err(),
+            "an unwritable config directory must surface an error, not silently succeed"
+        );
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&sub, fs::Permissions::from_mode(0o700));
+        }
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn concurrent_first_loads_converge_on_a_single_key() {
+        let dir = test_dir("config-concurrent");
+        let path = dir.join("config.json");
+        let store = std::sync::Arc::new(KeyStore::new());
+
+        let keys: Vec<String> = std::thread::scope(|s| {
+            let handles: Vec<_> = (0..8)
+                .map(|_| {
+                    let p = path.clone();
+                    let st = std::sync::Arc::clone(&store);
+                    s.spawn(move || load_config_from_path_with(&p, &st).management_key)
+                })
+                .collect();
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+
+        let distinct: std::collections::HashSet<&String> = keys.iter().collect();
+        assert_eq!(
+            distinct.len(),
+            1,
+            "concurrent first loads must agree on one key, got {:?}",
+            distinct
+        );
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn management_key_survives_a_restart() {
+        let dir = test_dir("config-restart");
+        let path = dir.join("config.json");
+
+        // First "run" of the app.
+        let first = load_config_from_path_with(&path, &KeyStore::new()).management_key;
+        // A later run starts with an empty store, as a fresh process would.
+        let second = load_config_from_path_with(&path, &KeyStore::new()).management_key;
+
+        assert_eq!(
+            first, second,
+            "the persisted key must be adopted on restart, not regenerated"
+        );
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_key_already_in_the_store_is_not_replaced_by_disk() {
+        let store = KeyStore::new();
+        store.set("proxypal-in-use".to_string());
+
+        let dir = test_dir("config-store-wins");
+        let path = dir.join("config.json");
+        fs::write(
+            &path,
+            r#"{"port":8317,"autoStart":true,"launchAtLogin":false,"managementKey":"proxypal-on-disk"}"#,
+        )
+        .unwrap();
+
+        let loaded = load_config_from_path_with(&path, &store);
+
+        assert_eq!(
+            loaded.management_key, "proxypal-in-use",
+            "the running sidecar's key must win; swapping it mid-process would break every request"
         );
 
         let _ = fs::remove_dir_all(dir);
