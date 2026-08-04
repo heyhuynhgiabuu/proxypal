@@ -13,52 +13,34 @@ pub fn get_config(state: State<AppState>) -> AppConfig {
     let config = state.config.lock().unwrap().clone();
     eprintln!(
         "[ProxyPal Debug] Loading {} custom providers",
-        config.amp_openai_providers.len()
+        config.openai_compatible_providers.len()
     );
-    for (i, provider) in config.amp_openai_providers.iter().enumerate() {
+    for (i, provider) in config.openai_compatible_providers.iter().enumerate() {
         eprintln!(
-            "[ProxyPal Debug] Provider {}: {} with {} models",
+            "[ProxyPal Debug] Provider {}: {} with {} keys",
             i,
             provider.name,
-            provider.models.len()
+            provider.api_key_entries.len()
         );
-        for (j, model) in provider.models.iter().enumerate() {
-            eprintln!("[ProxyPal Debug]   Model {}: {}", j, model.name);
-        }
     }
     config
 }
 
 #[tauri::command]
 pub fn save_config(state: State<AppState>, config: AppConfig) -> Result<(), String> {
-    // Debug: Log provider models before save
+    // Debug: Log provider keys before save
     eprintln!(
         "[ProxyPal Debug] Saving {} custom providers",
-        config.amp_openai_providers.len()
+        config.openai_compatible_providers.len()
     );
-    for (i, provider) in config.amp_openai_providers.iter().enumerate() {
+    for (i, provider) in config.openai_compatible_providers.iter().enumerate() {
         eprintln!(
-            "[ProxyPal Debug] Provider {}: {} with {} models",
+            "[ProxyPal Debug] Provider {}: {} with {} keys",
             i,
             provider.name,
-            provider.models.len()
+            provider.api_key_entries.len()
         );
-        for (j, model) in provider.models.iter().enumerate() {
-            eprintln!("[ProxyPal Debug]   Model {}: {}", j, model.name);
-        }
     }
-
-    // Settings writes only the flat amp field with rich empty. Lift it into the canonical
-    // rich field, merging with the currently-persisted rich so multi-key/prefix/headers
-    // the Settings form can't display are preserved (Defect C root fix).
-    let current_rich = state
-        .config
-        .lock()
-        .unwrap()
-        .openai_compatible_providers
-        .clone();
-    let mut config = config;
-    crate::config::lift_amp_to_rich(&mut config, &current_rich);
 
     persist_config(&config)?;
 

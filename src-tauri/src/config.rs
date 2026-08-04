@@ -46,9 +46,11 @@ pub struct AppConfig {
     pub amp_api_key: String,
     #[serde(default)]
     pub amp_model_mappings: Vec<AmpModelMapping>,
-    #[serde(default)]
-    pub amp_openai_provider: Option<AmpOpenAIProvider>, // DEPRECATED: Use amp_openai_providers
-    #[serde(default)]
+    /// DEPRECATED: parsed from old config.json for one-time migration only; never written.
+    #[serde(default, skip_serializing)]
+    pub amp_openai_provider: Option<AmpOpenAIProvider>,
+    /// DEPRECATED: parsed from old config.json for one-time migration only; never written.
+    #[serde(default, skip_serializing)]
     pub amp_openai_providers: Vec<AmpOpenAIProvider>,
     #[serde(default)]
     pub amp_routing_mode: String,
@@ -288,130 +290,37 @@ fn migrate_config(config: &mut AppConfig) -> bool {
             "[ProxyPal] Migrating {} OpenAI-compatible provider(s) to canonical rich format",
             config.amp_openai_providers.len()
         );
-        config.openai_compatible_providers = amp_to_rich(&config.amp_openai_providers);
+        config.openai_compatible_providers = config
+            .amp_openai_providers
+            .iter()
+            .map(|p| OpenAICompatibleProvider {
+                name: p.name.clone(),
+                base_url: p.base_url.clone(),
+                api_key_entries: vec![crate::types::api_keys::OpenAICompatibleApiKeyEntry {
+                    api_key: p.api_key.clone(),
+                    proxy_url: None,
+                }],
+                models: Some(
+                    p.models
+                        .iter()
+                        .map(|m| ModelMapping {
+                            name: m.name.clone(),
+                            alias: if m.alias.is_empty() { None } else { Some(m.alias.clone()) },
+                        })
+                        .collect(),
+                ),
+                headers: None,
+                prefix: None,
+            })
+            .collect();
         changed = true;
     }
-
-    // Always repopulate the flat mirror from the canonical rich field so the Settings UI
-    // (which still reads `ampOpenaiProviders`) stays in sync. Not a migration: preserves
-    // existing ids by (name, base_url) so it never churns the persisted file on its own.
-    config.amp_openai_providers =
-        rich_to_amp(&config.openai_compatible_providers, &config.amp_openai_providers);
 
     if changed {
         eprintln!("[ProxyPal] Config migration complete");
     }
 
     changed
-}
-
-/// Map legacy flat Amp providers -> canonical rich providers (one entry, no prefix/headers).
-pub(crate) fn amp_to_rich(amp: &[AmpOpenAIProvider]) -> Vec<OpenAICompatibleProvider> {
-    amp.iter()
-        .map(|p| OpenAICompatibleProvider {
-            name: p.name.clone(),
-            base_url: p.base_url.clone(),
-            api_key_entries: vec![crate::types::api_keys::OpenAICompatibleApiKeyEntry {
-                api_key: p.api_key.clone(),
-                proxy_url: None,
-            }],
-            models: Some(
-                p.models
-                    .iter()
-                    .map(|m| ModelMapping {
-                        name: m.name.clone(),
-                        alias: if m.alias.is_empty() { None } else { Some(m.alias.clone()) },
-                    })
-                    .collect(),
-            ),
-            headers: None,
-            prefix: None,
-        })
-        .collect()
-}
-
-/// Map canonical rich -> flat Amp providers. Preserves existing `id` by (name, base_url)
-/// match so repeated loads are idempotent and the persisted file never rewrites for id churn.
-// ponytail: keying by (name, base_url) — collides if two providers share both; UI dedupes
-// by name today, so acceptable. Upgrade path: persist an explicit stable id on rich entries.
-pub(crate) fn rich_to_amp(
-    rich: &[OpenAICompatibleProvider],
-    existing: &[AmpOpenAIProvider],
-) -> Vec<AmpOpenAIProvider> {
-    rich.iter()
-        .map(|p| {
-            let id = existing
-                .iter()
-                .find(|e| e.name == p.name && e.base_url == p.base_url)
-                .map(|e| e.id.clone())
-                .unwrap_or_else(generate_uuid);
-            AmpOpenAIProvider {
-                id,
-                name: p.name.clone(),
-                base_url: p.base_url.clone(),
-                api_key: p
-                    .api_key_entries
-                    .first()
-                    .map(|e| e.api_key.clone())
-                    .unwrap_or_default(),
-                models: p
-                    .models
-                    .clone()
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|m| AmpOpenAIModel {
-                        name: m.name,
-                        alias: m.alias.unwrap_or_default(),
-                    })
-                    .collect(),
-            }
-        })
-        .collect()
-}
-
-/// Settings writes only `amp_openai_providers` (single-key form) and sends an empty rich
-/// field. Lift that into the canonical rich field, preserving any multi-key/prefix/headers
-/// already on a matching rich entry (Settings displays only the first key). Drops rich
-/// entries with no Settings counterpart — Settings is authoritative for the provider set.
-/// No-op when the incoming config already carries rich (API Keys page path).
-// ponytail: reconciliation keying by (name, base_url) — collides if two providers share
-// both; UI dedupes by name, so acceptable. Upgrade path: explicit stable id on rich.
-pub(crate) fn lift_amp_to_rich(
-    config: &mut AppConfig,
-    current_rich: &[OpenAICompatibleProvider],
-) {
-    if !config.openai_compatible_providers.is_empty() || config.amp_openai_providers.is_empty() {
-        return;
-    }
-
-    let original_amp = config.amp_openai_providers.clone();
-    let mut new_rich = Vec::with_capacity(config.amp_openai_providers.len());
-
-    for amp in &config.amp_openai_providers {
-        let matched = current_rich
-            .iter()
-            .find(|r| r.name == amp.name && r.base_url == amp.base_url)
-            .cloned();
-        match matched {
-            Some(mut rich) => {
-                if !amp.api_key.is_empty() {
-                    if let Some(first) = rich.api_key_entries.first_mut() {
-                        first.api_key = amp.api_key.clone();
-                    } else {
-                        rich.api_key_entries.push(crate::types::api_keys::OpenAICompatibleApiKeyEntry {
-                            api_key: amp.api_key.clone(),
-                            proxy_url: None,
-                        });
-                    }
-                }
-                new_rich.push(rich);
-            }
-            None => new_rich.extend(amp_to_rich(std::slice::from_ref(amp))),
-        }
-    }
-
-    config.openai_compatible_providers = new_rich;
-    config.amp_openai_providers = rich_to_amp(&config.openai_compatible_providers, &original_amp);
 }
 
 fn load_config_from_path(path: &Path) -> AppConfig {
@@ -608,13 +517,16 @@ mod tests {
         fs::write(&path, legacy_json).unwrap();
         let loaded = load_config_from_path(&path);
 
-        assert_eq!(loaded.amp_openai_providers.len(), 1);
-        assert_eq!(loaded.amp_openai_providers[0].name, "Legacy");
+        // Single -> array -> rich migration chain: the legacy provider lands in rich.
+        assert_eq!(loaded.openai_compatible_providers.len(), 1);
+        assert_eq!(loaded.openai_compatible_providers[0].name, "Legacy");
         assert!(!loaded.amp_openai_providers[0].id.is_empty());
         assert!(loaded.amp_openai_provider.is_none());
 
+        // Flat fields are never written back to disk after migration.
         let persisted = fs::read_to_string(&path).unwrap();
-        assert!(persisted.contains("ampOpenaiProviders"));
+        assert!(!persisted.contains("ampOpenaiProviders"));
+        assert!(persisted.contains("openaiCompatibleProviders"));
 
         let _ = fs::remove_dir_all(dir);
     }
@@ -663,72 +575,28 @@ mod tests {
     }
 
     #[test]
-    fn settings_write_lands_in_canonical_field() {
-        let mut config = AppConfig::default();
-        config.amp_openai_providers.push(AmpOpenAIProvider {
-            id: generate_uuid(),
-            name: "OpenRouter".to_string(),
-            base_url: "https://openrouter.ai/api/v1".to_string(),
-            api_key: "sk-or-key".to_string(),
-            models: vec![],
-        });
-        // Settings sends rich empty — the signal for the normalizer.
-        assert!(config.openai_compatible_providers.is_empty());
-
-        // Pretend the currently-persisted rich had a multi-key entry with a prefix the
-        // Settings form can't display; it must survive the lift.
-        let current_rich = vec![OpenAICompatibleProvider {
-            name: "OpenRouter".to_string(),
-            base_url: "https://openrouter.ai/api/v1".to_string(),
-            api_key_entries: vec![
-                crate::types::api_keys::OpenAICompatibleApiKeyEntry {
-                    api_key: "old-key".to_string(),
-                    proxy_url: None,
-                },
-                crate::types::api_keys::OpenAICompatibleApiKeyEntry {
-                    api_key: "extra-key".to_string(),
-                    proxy_url: Some("https://proxy.local".to_string()),
-                },
-            ],
-            models: None,
-            headers: None,
-            prefix: Some("orprefix".to_string()),
-        }];
-
-        lift_amp_to_rich(&mut config, &current_rich);
-
-        assert_eq!(config.openai_compatible_providers.len(), 1);
-        let p = &config.openai_compatible_providers[0];
-        assert_eq!(p.api_key_entries.len(), 2, "extras preserved");
-        assert_eq!(p.api_key_entries[0].api_key, "sk-or-key", "first key updated from Settings");
-        assert_eq!(p.api_key_entries[1].api_key, "extra-key");
-        assert_eq!(p.prefix.as_deref(), Some("orprefix"), "prefix preserved");
-        // Flat mirror reflects the lifted rich (first key).
-        assert_eq!(config.amp_openai_providers.len(), 1);
-        assert_eq!(config.amp_openai_providers[0].api_key, "sk-or-key");
-    }
-
-    #[test]
     fn migration_amp_to_rich_on_load() {
         let dir = test_dir("config-amp-to-rich");
         let path = dir.join("config.json");
 
-        let mut base = AppConfig::default();
-        base.amp_openai_providers.push(AmpOpenAIProvider {
-            id: "amp-1".to_string(),
-            name: "OpenRouter".to_string(),
-            base_url: "https://openrouter.ai/api/v1".to_string(),
-            api_key: "sk-or".to_string(),
-            models: vec![AmpOpenAIModel {
-                name: "m1".to_string(),
-                alias: "a1".to_string(),
-            }],
-        });
-        // Rich field absent on disk -> emulate old app file by removing it from the JSON.
-        let mut json = serde_json::to_value(&base).unwrap();
-        let obj = json.as_object_mut().unwrap();
-        obj.remove("openaiCompatibleProviders");
-        fs::write(&path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
+        // Emulate an old config.json: flat field on disk, no rich field.
+        let legacy_json = r#"{
+  "port": 8317,
+  "autoStart": true,
+  "launchAtLogin": false,
+  "ampOpenaiProviders": [
+    {
+      "id": "amp-1",
+      "name": "OpenRouter",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "apiKey": "sk-or",
+      "models": [
+        { "name": "m1", "alias": "a1" }
+      ]
+    }
+  ]
+}"#;
+        fs::write(&path, legacy_json).unwrap();
 
         let loaded = load_config_from_path(&path);
         assert_eq!(loaded.openai_compatible_providers.len(), 1);
@@ -738,16 +606,57 @@ mod tests {
         assert_eq!(p.api_key_entries[0].api_key, "sk-or");
         assert_eq!(p.models.as_ref().unwrap().len(), 1);
         assert_eq!(p.models.as_ref().unwrap()[0].alias.as_deref(), Some("a1"));
-        // Flat mirror stays faithful and preserves the id.
-        assert_eq!(loaded.amp_openai_providers.len(), 1);
-        assert_eq!(loaded.amp_openai_providers[0].id, "amp-1");
-        assert_eq!(loaded.amp_openai_providers[0].api_key, "sk-or");
 
-        // Idempotent: second load does not double and keeps ids.
+        // Idempotent: second load does not double.
         let loaded2 = load_config_from_path(&path);
         assert_eq!(loaded2.openai_compatible_providers.len(), 1);
-        assert_eq!(loaded2.amp_openai_providers.len(), 1);
-        assert_eq!(loaded2.amp_openai_providers[0].id, "amp-1");
+
+        // After migration the flat fields are never written back to disk.
+        save_config_to_path(&path, &loaded).unwrap();
+        let persisted = fs::read_to_string(&path).unwrap();
+        assert!(!persisted.contains("ampOpenaiProviders"));
+        assert!(persisted.contains("openaiCompatibleProviders"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn save_never_writes_flat_fields() {
+        let dir = test_dir("config-no-flat-write");
+        let path = dir.join("config.json");
+
+        // Simulate an old config.json that still has flat fields on disk.
+        let legacy_json = r#"{
+  "port": 8317,
+  "autoStart": true,
+  "launchAtLogin": false,
+  "ampOpenaiProviders": [
+    {
+      "id": "amp-1",
+      "name": "Legacy",
+      "baseUrl": "https://api.legacy.com/v1",
+      "apiKey": "sk-legacy",
+      "models": []
+    }
+  ]
+}"#;
+        fs::write(&path, legacy_json).unwrap();
+        let loaded = load_config_from_path(&path);
+
+        // Migration lifted the flat provider into rich.
+        assert_eq!(loaded.openai_compatible_providers.len(), 1);
+        assert_eq!(loaded.openai_compatible_providers[0].name, "Legacy");
+        assert_eq!(
+            loaded.openai_compatible_providers[0].api_key_entries[0].api_key,
+            "sk-legacy"
+        );
+
+        // Saving never writes the flat fields back.
+        save_config_to_path(&path, &loaded).unwrap();
+        let persisted = fs::read_to_string(&path).unwrap();
+        assert!(!persisted.contains("ampOpenaiProviders"));
+        assert!(!persisted.contains("ampOpenaiProvider"));
+        assert!(persisted.contains("openaiCompatibleProviders"));
 
         let _ = fs::remove_dir_all(dir);
     }
