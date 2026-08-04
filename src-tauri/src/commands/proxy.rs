@@ -75,8 +75,7 @@ fn build_proxy_config_yaml(
     let codex_api_key_section = build_codex_api_key_section(config);
     let xai_api_key_section = build_xai_api_key_section(config);
     let vertex_api_key_section = build_vertex_api_key_section(config);
-    let (thinking_budget, thinking_mode_display) = resolve_thinking_budget(config);
-    let payload_section = build_payload_section(config, thinking_budget, thinking_mode_display);
+    let payload_section = build_payload_section(config);
     let routing_section = format!(
         "# Routing strategy for multiple API keys\nrouting:\n  strategy: \"{}\"\n\n",
         config.routing_strategy
@@ -466,47 +465,63 @@ fn build_vertex_api_key_section(config: &AppConfig) -> String {
     section
 }
 
-fn resolve_thinking_budget(config: &AppConfig) -> (u32, &str) {
-    let mode = if config.thinking_budget_mode.is_empty() {
-        "medium"
-    } else {
-        &config.thinking_budget_mode
-    };
-    let custom = if config.thinking_budget_custom == 0 {
-        16000
-    } else {
-        config.thinking_budget_custom
-    };
-    let budget = match mode {
-        "low" => 2048,
+/// CLIProxyAPI level->budget map (internal/thinking/convert.go).
+fn level_to_budget(level: &str) -> u32 {
+    match level {
+        "none" => 0,
+        "low" => 1024,
         "medium" => 8192,
-        "high" => 32768,
-        "custom" => custom,
+        "high" => 24576,
+        "xhigh" => 32768,
         _ => 8192,
-    };
-    (budget, mode)
+    }
 }
 
-fn build_payload_section(
-    config: &AppConfig,
-    thinking_budget: u32,
-    thinking_mode_display: &str,
-) -> String {
-    let gemini3_thinking_level = match thinking_budget {
-        2048 => "low",
-        8192 => "medium",
-        _ => "high",
-    };
+/// Gemini thinking level names differ from the effort levels.
+fn level_to_gemini(level: &str) -> &'static str {
+    match level {
+        "none" | "low" => "low",
+        "medium" => "medium",
+        "high" | "xhigh" => "high",
+        _ => "medium",
+    }
+}
 
-    let gemini_override_section = if config.gemini_thinking_injection {
-        build_gemini_override_section(gemini3_thinking_level)
+/// `override:` rule for OpenAI-compatible providers, emitted unconditionally.
+/// The `*` glob matches any model; `protocol: "openai"` restricts the rule to
+/// OpenAI-compat executors only (verified in CLIProxyAPI matchModelPattern + protocol gate).
+fn build_openai_compat_reasoning_rules(level: &str) -> String {
+    format!(
+        r#"    # All OpenAI-compatible provider models - reasoning effort
+    - models:
+        - name: "*"
+          protocol: "openai"
+      params:
+        reasoning_effort: "{}"
+"#,
+        level
+    )
+}
+
+fn build_payload_section(config: &AppConfig) -> String {
+    let level = &config.reasoning_effort_level;
+    let budget = level_to_budget(level);
+
+    let gemini_part = if config.gemini_thinking_injection {
+        build_gemini_override_section(level_to_gemini(level))
     } else {
         String::new()
+    };
+    let openai_rules = build_openai_compat_reasoning_rules(level);
+    let override_section = if gemini_part.is_empty() {
+        format!("  override:\n{}", openai_rules)
+    } else {
+        format!("  override:\n{}{}", gemini_part, openai_rules)
     };
 
     format!(
         r#"# Payload injection for thinking models
-# Antigravity Claude: Thinking budget mode: {} ({} tokens)
+# Reasoning level: {} ({} tokens for Claude)
 # Gemini 3: Thinking injection: {}
 payload:
   default:
@@ -541,25 +556,23 @@ payload:
           protocol: "claude"
       params:
         "thinking.budget_tokens": {}
-{}
-"#,
-        thinking_mode_display,
-        thinking_budget,
+{}"#,
+        level,
+        budget,
         if config.gemini_thinking_injection {
-            format!("enabled ({})", gemini3_thinking_level)
+            format!("enabled ({})", level_to_gemini(level))
         } else {
             "disabled".to_string()
         },
-        thinking_budget,
-        thinking_budget,
-        gemini_override_section
+        budget,
+        budget,
+        override_section
     )
 }
 
 fn build_gemini_override_section(thinking_level: &str) -> String {
     format!(
-        r#"  override:
-    # Gemini 3 models - thinking level
+        r#"    # Gemini 3 models - thinking level
     - models:
         - name: "gemini-3-pro-preview*"
       params:
@@ -1076,6 +1089,27 @@ mod tests {
             .split_once("name: \"gemini-3.6-flash-high*\"")
             .expect("expected a Gemini 3.6 high override");
         assert!(override_rule.contains("generationConfig.thinkingConfig.thinkingLevel: \"high\""));
+    }
+
+    #[test]
+    fn yaml_emits_openai_compat_reasoning_effort_from_level() {
+        let config = crate::config::AppConfig::default(); // reasoning_effort_level: medium
+        let config_dir = std::path::PathBuf::from("/tmp/proxypal-test-openai-reasoning");
+        let auth_dir = std::path::PathBuf::from("/tmp/.cli-proxy-api-test");
+        let yaml = build_proxy_config_yaml(&config, &config_dir, &auth_dir, "").unwrap();
+        assert!(yaml.contains("protocol: \"openai\""));
+        assert!(yaml.contains("reasoning_effort: \"medium\""));
+    }
+
+    #[test]
+    fn yaml_derives_claude_budget_from_level() {
+        let mut config = crate::config::AppConfig::default();
+        config.reasoning_effort_level = "xhigh".to_string();
+        let config_dir = std::path::PathBuf::from("/tmp/proxypal-test-claude-budget");
+        let auth_dir = std::path::PathBuf::from("/tmp/.cli-proxy-api-test");
+        let yaml = build_proxy_config_yaml(&config, &config_dir, &auth_dir, "").unwrap();
+        assert!(yaml.contains("\"thinking.budget_tokens\": 32768"));
+        assert!(yaml.contains("reasoning_effort: \"xhigh\""));
     }
 
     #[test]
