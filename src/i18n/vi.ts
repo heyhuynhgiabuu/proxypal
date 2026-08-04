@@ -697,10 +697,10 @@ export const vi = {
       current: "Hiện tại",
       defaultEffortLevel: "Mức độ suy luận mặc định",
       descriptionPrefix:
-        "Cấu hình mức độ suy luận mặc định cho các model GPT-5.x. Cài đặt này được áp dụng khi cấu hình CLI agents (OpenCode, Factory Droid, v.v.) và có thể ghi đè theo yêu cầu bằng hậu tố model như",
+        "Cấu hình mức độ suy luận mặc định cho các model Claude, Gemini, OpenAI-compatible (kimi, glm, v.v.) và GPT-5.x. Áp dụng cho payload proxy và CLI agents (OpenCode, Codex, v.v.), có thể ghi đè theo yêu cầu bằng hậu tố model như",
       descriptionSuffix: ".",
       perRequestOverride: "Ghi đè theo yêu cầu:",
-      title: "Mức độ suy luận (Model GPT/Codex)",
+      title: "Mức độ suy luận",
       useModelSuffix: "Sử dụng",
     },
     tabs: {
@@ -712,20 +712,11 @@ export const vi = {
       ssh: "SSH API",
     },
     thinkingBudget: {
-      apply: "Áp dụng",
-      budgetLevel: "Mức ngân sách",
-      current: "Hiện tại",
-      customRange: "Phạm vi: 1.024 - 200.000 tokens",
-      customTokenBudget: "Ngân sách Token tùy chỉnh",
-      description:
-        "Cấu hình ngân sách thinking/reasoning token cho các model Antigravity Claude (claude-sonnet-4-5-thinking, claude-opus-4-5-thinking). Áp dụng cho OpenCode và các CLI agent khác đi qua proxy.",
       geminiInjection: {
         description:
           "Khi bật, ProxyPal sẽ chèn cấu hình thinking cho các model Gemini 3. Tắt nếu bạn muốn tự kiểm soát thinking_config trong yêu cầu.",
         label: "Chèn cấu hình Thinking Gemini",
       },
-      title: "Ngân sách Thinking (Model Antigravity Claude)",
-      tokens: "tokens",
     },
     title: "Cài đặt",
     toasts: {

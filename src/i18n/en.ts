@@ -701,10 +701,10 @@ export const en = {
       current: "Current",
       defaultEffortLevel: "Default Effort Level",
       descriptionPrefix:
-        "Configure default reasoning effort for GPT-5.x models. This setting is applied when configuring CLI agents (OpenCode, Factory Droid, etc.) and can be overridden per-request using model suffix like",
+        "Configure the default reasoning effort for Claude, Gemini, OpenAI-compatible models (kimi, glm, etc.) and GPT-5.x. It is applied to the proxy payload and to CLI agents (OpenCode, Codex, etc.), and can be overridden per-request using model suffix like",
       descriptionSuffix: ".",
       perRequestOverride: "Per-request override:",
-      title: "Reasoning Effort (GPT/Codex Models)",
+      title: "Reasoning Level",
       useModelSuffix: "Use",
     },
     tabs: {
@@ -716,20 +716,11 @@ export const en = {
       ssh: "SSH API",
     },
     thinkingBudget: {
-      apply: "Apply",
-      budgetLevel: "Budget Level",
-      current: "Current",
-      customRange: "Range: 1,024 - 200,000 tokens",
-      customTokenBudget: "Custom Token Budget",
-      description:
-        "Configure the thinking/reasoning token budget for Antigravity Claude models (claude-sonnet-4-5-thinking, claude-opus-4-5-thinking). This applies to OpenCode and other CLI agents routed through the proxy.",
       geminiInjection: {
         description:
           "When enabled, ProxyPal injects thinking config for Gemini 3 models. Disable if you want to control thinking_config in your requests.",
         label: "Gemini Thinking Config Injection",
       },
-      title: "Thinking Budget (Antigravity Claude Models)",
-      tokens: "tokens",
     },
     title: "Settings",
     toasts: {

@@ -690,10 +690,10 @@ export const zhCN = {
       current: "当前",
       defaultEffortLevel: "默认强度级别",
       descriptionPrefix:
-        "为 GPT-5.x 模型配置默认推理强度。该设置会在配置 CLI agents（OpenCode、Factory Droid 等）时生效，也可通过请求中的模型后缀覆盖，例如",
+        "为 Claude、Gemini、OpenAI-compatible 模型（kimi、glm 等）和 GPT-5.x 配置默认推理强度。该设置会应用于代理 payload 和 CLI agents（OpenCode、Codex 等），也可通过请求中的模型后缀覆盖，例如",
       descriptionSuffix: "。",
       perRequestOverride: "按请求覆盖：",
-      title: "推理强度（GPT/Codex 模型）",
+      title: "推理强度",
       useModelSuffix: "使用",
     },
     tabs: {
@@ -705,20 +705,11 @@ export const zhCN = {
       ssh: "SSH API",
     },
     thinkingBudget: {
-      apply: "应用",
-      budgetLevel: "预算级别",
-      current: "当前",
-      customRange: "范围：1,024 - 200,000 tokens",
-      customTokenBudget: "自定义 Token 预算",
-      description:
-        "配置 Antigravity Claude 模型（claude-sonnet-4-5-thinking、claude-opus-4-5-thinking）的思考/推理 token 预算。该配置适用于 OpenCode 及其他通过代理路由的 CLI agent。",
       geminiInjection: {
         description:
           "开启后，ProxyPal 会为 Gemini 3 模型注入 thinking 配置。若你希望自行在请求中控制 thinking_config，请关闭此项。",
         label: "Gemini 思考配置注入",
       },
-      title: "思考预算（Antigravity Claude 模型）",
-      tokens: "tokens",
     },
     title: "设置",
     toasts: {
