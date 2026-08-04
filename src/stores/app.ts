@@ -48,7 +48,7 @@ function createAppStore() {
 
   // Config
   const [config, setConfig] = createSignal<AppConfig>({
-    ampOpenaiProviders: [],
+    openaiCompatibleProviders: [],
     autoStart: true,
     copilot: {
       accountType: "individual",

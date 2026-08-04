@@ -5,21 +5,6 @@ export async function getGptReasoningModels(): Promise<string[]> {
   return invoke("get_gpt_reasoning_models");
 }
 
-// OpenAI-compatible model aliases for custom providers
-export interface AmpOpenAIModel {
-  alias: string;
-  name: string;
-}
-
-// OpenAI-compatible provider configuration
-export interface AmpOpenAIProvider {
-  apiKey: string;
-  baseUrl: string;
-  id: string;
-  models: AmpOpenAIModel[];
-  name: string;
-}
-
 // GitHub Copilot configuration (via copilot-api)
 export interface CopilotConfig {
   accountType: string; // "individual", "business", "enterprise"

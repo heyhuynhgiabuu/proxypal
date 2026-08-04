@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type { OpenAICompatibleProvider, XaiApiKey } from "./api-keys";
 import type { CloudflareConfig } from "./cloudflare";
-import type { AmpOpenAIProvider, CopilotConfig } from "./models";
+import type { CopilotConfig } from "./models";
 import type { SshConfig } from "./ssh";
 
 // Config
@@ -16,13 +16,11 @@ export interface AppConfig {
     fork?: boolean;
     name: string;
   }>;
-  ampOpenaiProvider?: AmpOpenAIProvider;
-  ampOpenaiProviders: AmpOpenAIProvider[];
+  openaiCompatibleProviders: OpenAICompatibleProvider[];
   /** @deprecated Legacy Amp CLI fields retained for config.json compatibility */
   ampRoutingMode?: string;
   autoStart: boolean;
   cloudflareConfigs?: CloudflareConfig[];
-  openaiCompatibleProviders?: OpenAICompatibleProvider[];
   commercialMode?: boolean;
   copilot: CopilotConfig;
   debug: boolean;
