@@ -4,9 +4,9 @@ use std::path::Path;
 use uuid::Uuid;
 
 use crate::types::{
-    amp::generate_uuid, cloudflare::CloudflareConfig, AmpModelMapping, AmpOpenAIModel,
-    AmpOpenAIProvider, ClaudeApiKey, CodexApiKey, CopilotConfig, GeminiApiKey, ModelMapping,
-    OpenAICompatibleProvider, SshConfig, VertexApiKey, XaiApiKey,
+    amp::generate_uuid, cloudflare::CloudflareConfig, AmpModelMapping, AmpOpenAIProvider,
+    ClaudeApiKey, CodexApiKey, CopilotConfig, GeminiApiKey, ModelMapping, OpenAICompatibleProvider,
+    SshConfig, VertexApiKey, XaiApiKey,
 };
 
 /// App configuration persisted to config.json
