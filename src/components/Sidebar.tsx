@@ -83,12 +83,22 @@ const navItems: NavItem[] = [
 
 export const Sidebar: Component = () => {
   const { t } = useI18n();
-  const { currentPage, proxyStatus, setCurrentPage, setSidebarExpanded, sidebarExpanded } =
-    appStore;
+  const {
+    currentPage,
+    proxyStatus,
+    setCurrentPage,
+    setSidebarExpanded,
+    sidebarExpanded,
+    isLoading,
+  } = appStore;
   const [isPinned, setIsPinned] = createSignal(appStore.config().sidebarPinned || false);
 
-  // Persist pinned state
+  // Persist pinned state. Skip while the app is initializing: the config signal is still the
+  // empty default and saving it would overwrite the real config on disk (startup race).
   createEffect(() => {
+    if (isLoading()) {
+      return;
+    }
     const pinned = isPinned();
     if (appStore.config().sidebarPinned !== pinned) {
       appStore.setConfig({

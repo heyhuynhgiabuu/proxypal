@@ -4,7 +4,6 @@ import { AdvancedSettings } from "../components/settings/AdvancedSettings";
 import { ClaudeCodeSettings } from "../components/settings/ClaudeCodeSettings";
 import { CloudflareSettings } from "../components/settings/CloudflareSettings";
 import { ModelsSettings } from "../components/settings/ModelsSettings";
-import { OpenAIProviderSettings } from "../components/settings/OpenAIProviderSettings";
 import { ProvidersSettings } from "../components/settings/ProvidersSettings";
 import { ProxySettings } from "../components/settings/ProxySettings";
 import { SshSettings } from "../components/settings/SshSettings";
@@ -497,17 +496,6 @@ export function SettingsPage() {
             <ClaudeCodeSettings
               config={config}
               getAvailableTargetModels={getAvailableTargetModels}
-              handleConfigChange={handleConfigChange}
-              saving={saving}
-              setConfig={setConfig}
-              setSaving={setSaving}
-            />
-          </div>
-
-          {/* Custom OpenAI-Compatible Providers */}
-          <div class="space-y-4" classList={{ hidden: activeTab() !== "general" }}>
-            <OpenAIProviderSettings
-              config={config}
               handleConfigChange={handleConfigChange}
               saving={saving}
               setConfig={setConfig}
