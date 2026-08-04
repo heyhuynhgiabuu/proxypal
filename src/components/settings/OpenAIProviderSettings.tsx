@@ -77,7 +77,11 @@ export function OpenAIProviderSettings(props: OpenAIProviderSettingsProps) {
       newProviders = [...currentProviders, newProvider];
     }
 
-    const newConfig = { ...props.config(), ampOpenaiProviders: newProviders };
+    const newConfig = {
+      ...props.config(),
+      ampOpenaiProviders: newProviders,
+      openaiCompatibleProviders: [],
+    };
     props.setConfig(newConfig);
 
     props.setSaving(true);
@@ -99,7 +103,11 @@ export function OpenAIProviderSettings(props: OpenAIProviderSettingsProps) {
     const currentProviders = props.config().ampOpenaiProviders || [];
     const newProviders = currentProviders.filter((p) => p.id !== providerId);
 
-    const newConfig = { ...props.config(), ampOpenaiProviders: newProviders };
+    const newConfig = {
+      ...props.config(),
+      ampOpenaiProviders: newProviders,
+      openaiCompatibleProviders: [],
+    };
     props.setConfig(newConfig);
 
     props.setSaving(true);

@@ -187,88 +187,62 @@ fn build_proxy_url_line(config: &AppConfig) -> String {
 fn build_openai_compat_section(config: &AppConfig) -> String {
     let mut entries = Vec::new();
 
-    // Prefer the rich format (API Keys page) when available
-    if !config.openai_compatible_providers.is_empty() {
-        for provider in &config.openai_compatible_providers {
-            if provider.name.is_empty() || provider.base_url.is_empty() {
-                continue;
-            }
-            if provider.api_key_entries.is_empty()
-                || provider.api_key_entries.iter().all(|e| e.api_key.is_empty())
-            {
-                continue;
-            }
-            let mut entry =
-                format!("  # OpenAI-compatible provider: {}\n", provider.name);
-            entry.push_str(&format!("  - name: \"{}\"\n", provider.name));
-            entry.push_str(&format!("    base-url: \"{}\"\n", provider.base_url));
-            entry.push_str("    schema-cleaner: true\n");
-            if let Some(ref prefix) = provider.prefix {
-                if !prefix.is_empty() {
-                    entry.push_str(&format!("    prefix: \"{}\"\n", prefix));
-                }
-            }
-            if let Some(ref headers) = provider.headers {
-                if !headers.is_empty() {
-                    entry.push_str("    headers:\n");
-                    for (name, value) in headers {
-                        entry.push_str(&format!("      {}: \"{}\"\n", name, value));
-                    }
-                }
-            }
-            entry.push_str("    api-key-entries:\n");
-            for key_entry in &provider.api_key_entries {
-                if key_entry.api_key.is_empty() {
-                    continue;
-                }
-                entry.push_str(&format!("      - api-key: \"{}\"\n", key_entry.api_key));
-                if let Some(ref proxy_url) = key_entry.proxy_url {
-                    if !proxy_url.is_empty() {
-                        entry.push_str(&format!("        proxy-url: \"{}\"\n", proxy_url));
-                    }
-                }
-            }
-            if let Some(ref models) = provider.models {
-                if !models.is_empty() {
-                    entry.push_str("    models:\n");
-                    for model in models {
-                        let alias = model
-                            .alias
-                            .as_deref()
-                            .filter(|a| !a.is_empty())
-                            .unwrap_or(&model.name);
-                        entry.push_str(&format!("      - alias: \"{}\"\n", alias));
-                        entry.push_str(&format!("        name: \"{}\"\n", model.name));
-                    }
-                }
-            }
-            entries.push(entry);
+    // Canonical: read the rich field exclusively. The flat amp mirror is only kept in
+    // config.json for Settings-UI reads; `migrate_config` keeps it faithful to this field.
+    for provider in &config.openai_compatible_providers {
+        if provider.name.is_empty() || provider.base_url.is_empty() {
+            continue;
         }
-    } else {
-        // Fall back to legacy flat format (Settings page)
-        for provider in &config.amp_openai_providers {
-            if !provider.name.is_empty()
-                && !provider.base_url.is_empty()
-                && !provider.api_key.is_empty()
-            {
-                let mut entry =
-                    format!("  # Custom OpenAI-compatible provider: {}\n", provider.name);
-                entry.push_str(&format!("  - name: \"{}\"\n", provider.name));
-                entry.push_str(&format!("    base-url: \"{}\"\n", provider.base_url));
-                entry.push_str("    schema-cleaner: true\n");
-                entry.push_str("    api-key-entries:\n");
-                entry.push_str(&format!("      - api-key: \"{}\"\n", provider.api_key));
-
-                if !provider.models.is_empty() {
-                    entry.push_str("    models:\n");
-                    for model in &provider.models {
-                        entry.push_str(&format!("      - alias: \"{}\"\n", model.alias));
-                        entry.push_str(&format!("        name: \"{}\"\n", model.name));
-                    }
-                }
-                entries.push(entry);
+        if provider.api_key_entries.is_empty()
+            || provider.api_key_entries.iter().all(|e| e.api_key.is_empty())
+        {
+            continue;
+        }
+        let mut entry =
+            format!("  # OpenAI-compatible provider: {}\n", provider.name);
+        entry.push_str(&format!("  - name: \"{}\"\n", provider.name));
+        entry.push_str(&format!("    base-url: \"{}\"\n", provider.base_url));
+        entry.push_str("    schema-cleaner: true\n");
+        if let Some(ref prefix) = provider.prefix {
+            if !prefix.is_empty() {
+                entry.push_str(&format!("    prefix: \"{}\"\n", prefix));
             }
         }
+        if let Some(ref headers) = provider.headers {
+            if !headers.is_empty() {
+                entry.push_str("    headers:\n");
+                for (name, value) in headers {
+                    entry.push_str(&format!("      {}: \"{}\"\n", name, value));
+                }
+            }
+        }
+        entry.push_str("    api-key-entries:\n");
+        for key_entry in &provider.api_key_entries {
+            if key_entry.api_key.is_empty() {
+                continue;
+            }
+            entry.push_str(&format!("      - api-key: \"{}\"\n", key_entry.api_key));
+            if let Some(ref proxy_url) = key_entry.proxy_url {
+                if !proxy_url.is_empty() {
+                    entry.push_str(&format!("        proxy-url: \"{}\"\n", proxy_url));
+                }
+            }
+        }
+        if let Some(ref models) = provider.models {
+            if !models.is_empty() {
+                entry.push_str("    models:\n");
+                for model in models {
+                    let alias = model
+                        .alias
+                        .as_deref()
+                        .filter(|a| !a.is_empty())
+                        .unwrap_or(&model.name);
+                    entry.push_str(&format!("      - alias: \"{}\"\n", alias));
+                    entry.push_str(&format!("        name: \"{}\"\n", model.name));
+                }
+            }
+        }
+        entries.push(entry);
     }
 
     // Copilot OpenAI-compatible entry
@@ -622,6 +596,10 @@ fn build_gemini_override_section(thinking_level: &str) -> String {
         - name: "gemini-3.5-flash-low*"
       params:
         generationConfig.thinkingConfig.thinkingLevel: "low"
+    - models:
+        - name: "gemini-3.6-flash-high*"
+      params:
+        generationConfig.thinkingConfig.thinkingLevel: "high"
 "#,
         thinking_level
     )
@@ -1088,6 +1066,19 @@ mod tests {
     }
 
     #[test]
+    fn build_proxy_config_yaml_forces_high_thinking_for_gemini_3_6_flash_high() {
+        let config = crate::config::AppConfig::default();
+        let config_dir = std::path::PathBuf::from("/tmp/proxypal-test-gemini-3-6");
+        let auth_dir = std::path::PathBuf::from("/tmp/.cli-proxy-api-test");
+        let yaml = build_proxy_config_yaml(&config, &config_dir, &auth_dir, "").unwrap();
+
+        let (_, override_rule) = yaml
+            .split_once("name: \"gemini-3.6-flash-high*\"")
+            .expect("expected a Gemini 3.6 high override");
+        assert!(override_rule.contains("generationConfig.thinkingConfig.thinkingLevel: \"high\""));
+    }
+
+    #[test]
     fn build_proxy_config_yaml_includes_xai_api_key_entries() {
         let mut config = crate::config::AppConfig::default();
         config.xai_api_keys.push(crate::types::XaiApiKey {
@@ -1104,6 +1095,37 @@ mod tests {
         assert!(yaml.contains("api-key: \"xai-test-key\""));
         assert!(yaml.contains("base-url: \"https://api.x.ai/v1\""));
         assert!(yaml.contains("prefix: \"xai\""));
+    }
+
+    #[test]
+    fn build_proxy_yaml_emits_all_rich_keys_and_prefix() {
+        let mut config = crate::config::AppConfig::default();
+        config.openai_compatible_providers.push(crate::types::OpenAICompatibleProvider {
+            name: "Custom".to_string(),
+            base_url: "https://api.openai.com/v1".to_string(),
+            api_key_entries: vec![
+                crate::types::api_keys::OpenAICompatibleApiKeyEntry {
+                    api_key: "rich-key-1".to_string(),
+                    proxy_url: None,
+                },
+                crate::types::api_keys::OpenAICompatibleApiKeyEntry {
+                    api_key: "rich-key-2".to_string(),
+                    proxy_url: Some("https://proxy.local".to_string()),
+                },
+            ],
+            models: None,
+            headers: None,
+            prefix: Some("custom-prefix".to_string()),
+        });
+        let config_dir = std::path::PathBuf::from("/tmp/proxypal-test-openai-compat");
+        let auth_dir = std::path::PathBuf::from("/tmp/.cli-proxy-api-test");
+        let yaml = build_proxy_config_yaml(&config, &config_dir, &auth_dir, "").unwrap();
+
+        assert!(yaml.contains("base-url: \"https://api.openai.com/v1\""));
+        assert!(yaml.contains("api-key: \"rich-key-1\""));
+        assert!(yaml.contains("api-key: \"rich-key-2\""));
+        assert!(yaml.contains("proxy-url: \"https://proxy.local\""));
+        assert!(yaml.contains("prefix: \"custom-prefix\""));
     }
 
     #[test]

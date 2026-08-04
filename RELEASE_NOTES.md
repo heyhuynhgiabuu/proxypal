@@ -1,6 +1,22 @@
-# ProxyPal v0.4.47
+# ProxyPal v0.4.48
 
 **Release status:** Pending publication
+
+## Gemini reliability
+
+- Adds Antigravity support for `gemini-3.6-flash-high`, including fixed high-thinking configuration, OpenCode reasoning/multimodal capabilities, and quota labeling.
+- Replaces the unavailable Gemini CLI OAuth flow with clear API Keys setup guidance, avoiding the sidecar’s 404 management endpoint.
+
+## CLIProxyAPI v7.2.95
+
+- Updates the pinned mainline sidecar from v7.2.93 to v7.2.95 across local development, CI, and release builds.
+- Includes upstream OpenAI translator tool-handling optimization, improved xAI token counting, Claude input-token estimation, and Codex Alpha Search routing.
+
+---
+
+# ProxyPal v0.4.47
+
+**Released:** 2026-07-21
 
 ## CLIProxyAPI v7.2.93
 

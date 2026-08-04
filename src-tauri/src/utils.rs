@@ -48,6 +48,8 @@ pub fn detect_provider_from_model(model: &str) -> String {
         // Gemini 3.5 — Antigravity-only variants
         || model_lower == "gemini-3.5-flash"
         || model_lower == "gemini-3.5-flash-low"
+        // Gemini 3.6 — Antigravity-only variant
+        || model_lower == "gemini-3.6-flash-high"
     {
         return "antigravity".to_string();
     }
@@ -200,6 +202,14 @@ pub fn extract_model_from_path(path: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn detect_provider_from_model_classifies_gemini_3_6_flash_high_as_antigravity() {
+        assert_eq!(
+            detect_provider_from_model("gemini-3.6-flash-high"),
+            "antigravity"
+        );
+    }
 
     #[test]
     fn detect_provider_from_filename_known_prefixes() {

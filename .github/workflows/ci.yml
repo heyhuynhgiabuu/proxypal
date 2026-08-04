@@ -19,7 +19,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   CLIPROXYAPI_CHANNEL: ${{ github.event.inputs.sidecar_channel || 'mainline' }}
-  CLIPROXYAPI_VERSION: "7.2.93"
+  CLIPROXYAPI_VERSION: "7.2.95"
 
 jobs:
   check:
