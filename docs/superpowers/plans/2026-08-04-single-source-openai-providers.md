@@ -250,10 +250,19 @@ git commit -m "refactor(ts): AppConfig uses openaiCompatibleProviders as the onl
 
 ### Task 3: Frontend — Settings form on rich, readers updated
 
-**Files:**
-- Rewrite: `src/components/settings/OpenAIProviderSettings.tsx` (table + modal)
-- Modify: `src/components/settings/AdvancedSettings.tsx` (~line 265 `getAvailableTargetModels`)
-- Modify: `src/pages/Settings.tsx` (~line 147 `getAvailableTargetModels`)
+**Note (2026-08-04):** Task 3 was superseded during execution. The Settings duplicate
+(`OpenAIProviderSettings.tsx`) was DELETED instead of rewritten — API Keys tab is the single
+management surface. What shipped:
+
+- `OpenAIProviderSettings.tsx` deleted; render removed from `Settings.tsx`.
+- `AdvancedSettings.tsx` / `Settings.tsx` readers switched to `openaiCompatibleProviders`.
+- Startup race fixed: `Sidebar.tsx` effect skips persist while `isLoading()`.
+
+**Files (executed):**
+- Delete: `src/components/settings/OpenAIProviderSettings.tsx`
+- Modify: `src/components/settings/AdvancedSettings.tsx` (~line 265)
+- Modify: `src/pages/Settings.tsx` (~line 147, import + render removal)
+- Modify: `src/components/Sidebar.tsx` (race guard)
 
 **Interfaces:**
 - Consumes: `props.config().openaiCompatibleProviders: OpenAICompatibleProvider[]`; `props.setConfig`, `props.setSaving`, `saveConfig` from `../../lib/tauri` (unchanged signatures); `ModelMapping` type from `src/lib/tauri`

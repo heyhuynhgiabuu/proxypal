@@ -97,12 +97,19 @@ Full migration to rich format:
 
 - Untouched: `OpenAICompatibleTab.tsx` already operates on rich via management API.
 
-## Known duplication (documented, not fixed here)
+## Known duplication — RESOLVED 2026-08-04
 
-The Settings section and the API Keys OpenAI Compatible tab are now functionally duplicates
-(both manage multi-key + prefix providers). This predates this change and is intentionally left:
-the Settings form is a quick-access subset (no model manager, no test connection). Future work:
-remove one of the two (candidate: Settings section). Mentioned in PR description.
+The Settings section was a degraded duplicate of the API Keys OpenAI Compatible tab.
+Deleted: `OpenAIProviderSettings.tsx` + its render in `Settings.tsx`. API Keys tab is the
+single management surface. `AdvancedSettings`/`Settings` read-only model consumers keep
+reading `openaiCompatibleProviders` (unchanged).
+
+## Startup race (found during verification) — FIXED 2026-08-04
+
+`Sidebar.tsx` createEffect persisted `sidebarPinned` during `initialize()` while the config
+signal was still the empty default, overwriting `openaiCompatibleProviders` on disk. The
+`lift_amp_to_rich` merge previously masked it; the single-source refactor exposed it.
+Fix: early-return from the effect while `isLoading()`.
 
 ## Section 3 — Testing & verification
 
@@ -110,17 +117,15 @@ remove one of the two (candidate: Settings section). Mentioned in PR description
 - `pnpm tsc --noEmit`: clean (types change across 5 files).
 - Manual dev checklist:
   1. Migration: existing config.json (with `ampOpenaiProviders`, e.g. current machine state) →
-     launch → providers visible in API Keys AND Settings → after restart JSON contains no
-     `ampOpenai*` keys.
-  2. Settings flow: add provider with 3 keys + prefix via Settings → restart → all intact.
-  3. API Keys flow: existing nvidia provider (5 keys + prefix) → restart → unchanged.
-  4. Cross-visibility: add via API Keys → visible in Settings, and vice versa (single source).
-  5. Dock/tray regression (already merged): close-to-tray hides Dock icon; restore paints
+     launch → providers visible in API Keys → after restart JSON contains no `ampOpenai*` keys.
+  2. API Keys flow: existing nvidia provider (5 keys + prefix) → restart → unchanged.
+  3. Startup race: restart twice; `config.json` keeps `openaiCompatibleProviders` intact both
+     times (no empty overwrite from Sidebar).
+  4. Dock/tray regression (already merged): close-to-tray hides Dock icon; restore paints
      without black window.
 
 ## Out of scope
 
-- Removing the Settings/API Keys duplication (documented above).
 - Adding a stable `id` to the rich format (index-based editing is sufficient; schema change
   deferred until a real need — `ponytail:` ceiling, upgrade path = explicit id field).
 - Migrating other providers (Claude/Gemini/Codex prefix emission — already done in `022c490`).
