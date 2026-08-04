@@ -4,7 +4,7 @@ import { saveConfig, testOpenAIProvider } from "../../lib/tauri";
 import { toastStore } from "../../stores/toast";
 import { Button } from "../ui";
 
-import type { AmpOpenAIModel, AmpOpenAIProvider } from "../../lib/tauri";
+import type { ModelMapping, OpenAICompatibleProvider } from "../../lib/tauri";
 import type { SettingsBaseProps } from "./types";
 
 type OpenAIProviderSettingsProps = SettingsBaseProps;
@@ -14,13 +14,18 @@ export function OpenAIProviderSettings(props: OpenAIProviderSettingsProps) {
 
   // Provider modal state
   const [providerModalOpen, setProviderModalOpen] = createSignal(false);
-  const [editingProviderId, setEditingProviderId] = createSignal<string | null>(null);
+  const [editingIndex, setEditingIndex] = createSignal<number | null>(null);
 
   // Provider form state (used in modal)
   const [providerName, setProviderName] = createSignal("");
   const [providerBaseUrl, setProviderBaseUrl] = createSignal("");
-  const [providerApiKey, setProviderApiKey] = createSignal("");
-  const [providerModels, setProviderModels] = createSignal<AmpOpenAIModel[]>([]);
+  const [providerApiKeys, setProviderApiKeys] = createSignal<{ apiKey: string }[]>([
+    { apiKey: "" },
+  ]);
+  const [bulkAddMode, setBulkAddMode] = createSignal(false);
+  const [bulkKeysInput, setBulkKeysInput] = createSignal("");
+  const [providerPrefix, setProviderPrefix] = createSignal("");
+  const [providerModels, setProviderModels] = createSignal<ModelMapping[]>([]);
   const [newModelName, setNewModelName] = createSignal("");
   const [newModelAlias, setNewModelAlias] = createSignal("");
 
@@ -37,7 +42,7 @@ export function OpenAIProviderSettings(props: OpenAIProviderSettingsProps) {
       toastStore.error(t("settings.toasts.modelNameRequired"));
       return;
     }
-    setProviderModels([...providerModels(), { alias, name }]);
+    setProviderModels([...providerModels(), { alias: alias || undefined, name }]);
     setNewModelName("");
     setNewModelAlias("");
   };
@@ -49,38 +54,36 @@ export function OpenAIProviderSettings(props: OpenAIProviderSettingsProps) {
   const saveOpenAIProvider = async () => {
     const name = providerName().trim();
     const baseUrl = providerBaseUrl().trim();
-    const apiKey = providerApiKey().trim();
+    const keys = providerApiKeys()
+      .map((k) => k.apiKey.trim())
+      .filter((k) => k.length > 0)
+      .map((apiKey) => ({ apiKey }));
 
-    if (!name || !baseUrl || !apiKey) {
+    if (!name || !baseUrl || keys.length === 0) {
       toastStore.error(t("settings.toasts.providerFieldsRequired"));
       return;
     }
 
-    const currentProviders = props.config().ampOpenaiProviders || [];
-    const editId = editingProviderId();
+    const currentProviders = props.config().openaiCompatibleProviders || [];
+    const editIndex = editingIndex();
+    const provider: OpenAICompatibleProvider = {
+      name,
+      baseUrl,
+      apiKeyEntries: keys,
+      prefix: providerPrefix().trim() || undefined,
+      models: providerModels().length > 0 ? providerModels() : undefined,
+    };
 
-    let newProviders: AmpOpenAIProvider[];
-    if (editId) {
-      // Update existing provider
-      newProviders = currentProviders.map((p) =>
-        p.id === editId ? { apiKey, baseUrl, id: editId, models: providerModels(), name } : p,
-      );
+    let newProviders: OpenAICompatibleProvider[];
+    if (editIndex !== null) {
+      newProviders = currentProviders.map((p, i) => (i === editIndex ? provider : p));
     } else {
-      // Add new provider with generated UUID
-      const newProvider: AmpOpenAIProvider = {
-        apiKey,
-        baseUrl,
-        id: crypto.randomUUID(),
-        models: providerModels(),
-        name,
-      };
-      newProviders = [...currentProviders, newProvider];
+      newProviders = [...currentProviders, provider];
     }
 
     const newConfig = {
       ...props.config(),
-      ampOpenaiProviders: newProviders,
-      openaiCompatibleProviders: [],
+      openaiCompatibleProviders: newProviders,
     };
     props.setConfig(newConfig);
 
@@ -88,7 +91,9 @@ export function OpenAIProviderSettings(props: OpenAIProviderSettingsProps) {
     try {
       await saveConfig(newConfig);
       toastStore.success(
-        editId ? t("settings.toasts.providerUpdated") : t("settings.toasts.providerAdded"),
+        editIndex !== null
+          ? t("settings.toasts.providerUpdated")
+          : t("settings.toasts.providerAdded"),
       );
       closeProviderModal();
     } catch (error) {
@@ -99,14 +104,13 @@ export function OpenAIProviderSettings(props: OpenAIProviderSettingsProps) {
     }
   };
 
-  const deleteOpenAIProvider = async (providerId: string) => {
-    const currentProviders = props.config().ampOpenaiProviders || [];
-    const newProviders = currentProviders.filter((p) => p.id !== providerId);
+  const deleteOpenAIProvider = async (index: number) => {
+    const currentProviders = props.config().openaiCompatibleProviders || [];
+    const newProviders = currentProviders.filter((_, i) => i !== index);
 
     const newConfig = {
       ...props.config(),
-      ampOpenaiProviders: newProviders,
-      openaiCompatibleProviders: [],
+      openaiCompatibleProviders: newProviders,
     };
     props.setConfig(newConfig);
 
@@ -125,7 +129,7 @@ export function OpenAIProviderSettings(props: OpenAIProviderSettingsProps) {
   // Test connection to the custom OpenAI provider
   const testProviderConnection = async () => {
     const baseUrl = providerBaseUrl().trim();
-    const apiKey = providerApiKey().trim();
+    const apiKey = providerApiKeys()[0]?.apiKey.trim() || "";
 
     if (!baseUrl || !apiKey) {
       toastStore.error(t("settings.toasts.baseUrlAndApiKeyRequiredForTest"));
@@ -160,18 +164,37 @@ export function OpenAIProviderSettings(props: OpenAIProviderSettingsProps) {
   };
 
   // Initialize OpenAI provider form for editing
-  const openProviderModal = (provider?: AmpOpenAIProvider) => {
+  const openProviderModal = (provider?: OpenAICompatibleProvider, index?: number) => {
     if (provider) {
-      setEditingProviderId(provider.id);
+      setEditingIndex(index ?? null);
       setProviderName(provider.name);
       setProviderBaseUrl(provider.baseUrl);
-      setProviderApiKey(provider.apiKey);
+      setProviderPrefix(provider.prefix || "");
       setProviderModels(provider.models || []);
+      if (provider.apiKeyEntries.length > 1) {
+        setBulkAddMode(true);
+        setBulkKeysInput(
+          provider.apiKeyEntries.map((entry) => entry.apiKey).filter((k) => k.trim()).join("\n"),
+        );
+        setProviderApiKeys(
+          provider.apiKeyEntries
+            .map((e) => e.apiKey.trim())
+            .filter((k) => k.length > 0)
+            .map((apiKey) => ({ apiKey })),
+        );
+      } else {
+        setBulkAddMode(false);
+        setBulkKeysInput("");
+        setProviderApiKeys([{ apiKey: provider.apiKeyEntries[0]?.apiKey || "" }]);
+      }
     } else {
-      setEditingProviderId(null);
+      setEditingIndex(null);
       setProviderName("");
       setProviderBaseUrl("");
-      setProviderApiKey("");
+      setProviderApiKeys([{ apiKey: "" }]);
+      setBulkAddMode(false);
+      setBulkKeysInput("");
+      setProviderPrefix("");
       setProviderModels([]);
     }
     setProviderTestResult(null);
@@ -180,10 +203,13 @@ export function OpenAIProviderSettings(props: OpenAIProviderSettingsProps) {
 
   const closeProviderModal = () => {
     setProviderModalOpen(false);
-    setEditingProviderId(null);
+    setEditingIndex(null);
     setProviderName("");
     setProviderBaseUrl("");
-    setProviderApiKey("");
+    setProviderApiKeys([{ apiKey: "" }]);
+    setBulkAddMode(false);
+    setBulkKeysInput("");
+    setProviderPrefix("");
     setProviderModels([]);
     setProviderTestResult(null);
   };
@@ -200,20 +226,22 @@ export function OpenAIProviderSettings(props: OpenAIProviderSettingsProps) {
       </div>
 
       {/* Provider Table */}
-      <Show when={(props.config().ampOpenaiProviders || []).length > 0}>
+      <Show when={(props.config().openaiCompatibleProviders || []).length > 0}>
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
               <tr class="border-b border-gray-200 text-left text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
                 <th class="pb-2 font-medium">{t("common.name")}</th>
                 <th class="pb-2 font-medium">{t("common.baseUrl")}</th>
+                <th class="pb-2 font-medium">Keys</th>
+                <th class="pb-2 font-medium">Prefix</th>
                 <th class="pb-2 font-medium">{t("common.models")}</th>
                 <th class="w-20 pb-2 font-medium">{t("common.actions")}</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
-              <For each={props.config().ampOpenaiProviders || []}>
-                {(provider) => (
+              <For each={props.config().openaiCompatibleProviders || []}>
+                {(provider, index) => (
                   <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50">
                     <td class="py-2 pr-2">
                       <span class="font-medium text-gray-900 dark:text-gray-100">
@@ -230,6 +258,16 @@ export function OpenAIProviderSettings(props: OpenAIProviderSettingsProps) {
                     </td>
                     <td class="py-2 pr-2">
                       <span class="text-xs text-gray-500 dark:text-gray-400">
+                        {provider.apiKeyEntries.length}
+                      </span>
+                    </td>
+                    <td class="py-2 pr-2">
+                      <span class="text-xs text-gray-500 dark:text-gray-400">
+                        {provider.prefix || "—"}
+                      </span>
+                    </td>
+                    <td class="py-2 pr-2">
+                      <span class="text-xs text-gray-500 dark:text-gray-400">
                         {provider.models?.length || 0} model
                         {(provider.models?.length || 0) !== 1 ? "s" : ""}
                       </span>
@@ -238,7 +276,7 @@ export function OpenAIProviderSettings(props: OpenAIProviderSettingsProps) {
                       <div class="flex items-center gap-1">
                         <button
                           class="p-1.5 text-gray-400 transition-colors hover:text-brand-500"
-                          onClick={() => openProviderModal(provider)}
+                          onClick={() => openProviderModal(provider, index())}
                           title="Edit provider"
                           type="button"
                         >
@@ -258,7 +296,7 @@ export function OpenAIProviderSettings(props: OpenAIProviderSettingsProps) {
                         </button>
                         <button
                           class="p-1.5 text-gray-400 transition-colors hover:text-red-500"
-                          onClick={() => deleteOpenAIProvider(provider.id)}
+                          onClick={() => deleteOpenAIProvider(index())}
                           title="Delete provider"
                           type="button"
                         >
@@ -287,7 +325,7 @@ export function OpenAIProviderSettings(props: OpenAIProviderSettingsProps) {
       </Show>
 
       {/* Empty state */}
-      <Show when={(props.config().ampOpenaiProviders || []).length === 0}>
+      <Show when={(props.config().openaiCompatibleProviders || []).length === 0}>
         <div class="py-6 text-center text-sm text-gray-400 dark:text-gray-500">
           No custom providers configured
         </div>
@@ -322,7 +360,7 @@ export function OpenAIProviderSettings(props: OpenAIProviderSettingsProps) {
           >
             <div class="sticky top-0 flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
               <h3 class="font-semibold text-gray-900 dark:text-gray-100">
-                {editingProviderId() ? "Edit Provider" : "Add Provider"}
+                {editingIndex() !== null ? "Edit Provider" : "Add Provider"}
               </h3>
               <button
                 class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
@@ -367,15 +405,76 @@ export function OpenAIProviderSettings(props: OpenAIProviderSettingsProps) {
                 />
               </label>
 
-              {/* API Key */}
+              {/* API Keys */}
+              <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {t("apiKeys.labels.apiKeysRequired")}
+                  </span>
+                  <button
+                    class="text-xs text-brand-600 hover:underline dark:text-brand-500"
+                    onClick={() => {
+                      setBulkAddMode(!bulkAddMode());
+                      if (!bulkAddMode()) {
+                        const existingKeys = providerApiKeys()
+                          .map((entry) => entry.apiKey)
+                          .filter((apiKey) => apiKey.trim())
+                          .join("\n");
+                        setBulkKeysInput(existingKeys);
+                      }
+                    }}
+                    type="button"
+                  >
+                    {bulkAddMode()
+                      ? t("apiKeys.actions.singleKey")
+                      : t("apiKeys.actions.bulkAdd")}
+                  </button>
+                </div>
+
+                <Show when={!bulkAddMode()}>
+                  <input
+                    class="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-900"
+                    onInput={(e) => setProviderApiKeys([{ apiKey: e.currentTarget.value }])}
+                    placeholder={t("apiKeys.placeholders.providerApiKey")}
+                    type="password"
+                    value={providerApiKeys()[0]?.apiKey || ""}
+                  />
+                </Show>
+
+                <Show when={bulkAddMode()}>
+                  <textarea
+                    class="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 font-mono text-sm focus:border-transparent focus:ring-2 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-900"
+                    onInput={(e) => {
+                      setBulkKeysInput(e.currentTarget.value);
+                      const keys = e.currentTarget.value
+                        .split("\n")
+                        .map((key) => key.trim())
+                        .filter((key) => key.length > 0)
+                        .map((apiKey) => ({ apiKey }));
+                      setProviderApiKeys(keys.length > 0 ? keys : [{ apiKey: "" }]);
+                    }}
+                    placeholder={t("apiKeys.placeholders.bulkApiKeys")}
+                    rows={5}
+                    value={bulkKeysInput()}
+                  />
+                  <p class="text-xs text-gray-500 dark:text-gray-400">
+                    {providerApiKeys().filter((entry) => entry.apiKey.trim()).length}{" "}
+                    {t("apiKeys.keysDetected")}
+                  </p>
+                </Show>
+              </div>
+
+              {/* Prefix */}
               <label class="block">
-                <span class="text-xs font-medium text-gray-600 dark:text-gray-400">API Key</span>
+                <span class="text-xs font-medium text-gray-600 dark:text-gray-400">
+                  {t("apiKeys.labels.prefixOptional")}
+                </span>
                 <input
-                  class="transition-smooth mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 font-mono text-sm focus:border-transparent focus:ring-2 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-800"
-                  onInput={(e) => setProviderApiKey(e.currentTarget.value)}
-                  placeholder="sk-..."
-                  type="password"
-                  value={providerApiKey()}
+                  class="transition-smooth mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-800"
+                  onInput={(e) => setProviderPrefix(e.currentTarget.value)}
+                  placeholder={t("apiKeys.placeholders.providerPrefix")}
+                  type="text"
+                  value={providerPrefix()}
                 />
               </label>
 
@@ -469,7 +568,9 @@ export function OpenAIProviderSettings(props: OpenAIProviderSettingsProps) {
               <div class="flex items-center gap-2">
                 <Button
                   disabled={
-                    testingProvider() || !providerBaseUrl().trim() || !providerApiKey().trim()
+                    testingProvider() ||
+                    !providerBaseUrl().trim() ||
+                    !providerApiKeys()[0]?.apiKey.trim()
                   }
                   onClick={testProviderConnection}
                   size="sm"
@@ -563,13 +664,15 @@ export function OpenAIProviderSettings(props: OpenAIProviderSettingsProps) {
               </Button>
               <Button
                 disabled={
-                  !providerName().trim() || !providerBaseUrl().trim() || !providerApiKey().trim()
+                  !providerName().trim() ||
+                  !providerBaseUrl().trim() ||
+                  providerApiKeys().filter((k) => k.apiKey.trim()).length === 0
                 }
                 onClick={saveOpenAIProvider}
                 size="sm"
                 variant="primary"
               >
-                {editingProviderId() ? "Save Changes" : "Add Provider"}
+                {editingIndex() !== null ? "Save Changes" : "Add Provider"}
               </Button>
             </div>
           </div>

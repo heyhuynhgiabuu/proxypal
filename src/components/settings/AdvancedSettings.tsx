@@ -262,7 +262,7 @@ export function AdvancedSettings(props: AdvancedSettingsProps) {
   const getAvailableTargetModels = () => {
     const customModels: { label: string; value: string }[] = [];
 
-    const providers = props.config().ampOpenaiProviders || [];
+    const providers = props.config().openaiCompatibleProviders || [];
     for (const provider of providers) {
       if (provider?.models) {
         for (const model of provider.models) {

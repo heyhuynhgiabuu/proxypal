@@ -144,7 +144,7 @@ export function SettingsPage() {
     const customModels: { label: string; value: string }[] = [];
 
     // Add models from all custom OpenAI providers
-    const providers = config().ampOpenaiProviders || [];
+    const providers = config().openaiCompatibleProviders || [];
     for (const provider of providers) {
       if (provider?.models) {
         for (const model of provider.models) {
