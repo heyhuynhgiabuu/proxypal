@@ -1,23 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
 // ============================================
-// Thinking Budget Settings
-// ============================================
-
-export interface ThinkingBudgetSettings {
-  customBudget: number;
-  mode: "low" | "medium" | "high" | "custom";
-}
-
-export async function getThinkingBudgetSettings(): Promise<ThinkingBudgetSettings> {
-  return invoke("get_thinking_budget_settings");
-}
-
-export async function setThinkingBudgetSettings(settings: ThinkingBudgetSettings): Promise<void> {
-  return invoke("set_thinking_budget_settings", { settings });
-}
-
-// ============================================
 // Reasoning Effort Settings (GPT/Codex models)
 // ============================================
 
