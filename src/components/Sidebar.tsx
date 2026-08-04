@@ -85,11 +85,11 @@ export const Sidebar: Component = () => {
   const { t } = useI18n();
   const {
     currentPage,
+    isLoading,
     proxyStatus,
     setCurrentPage,
     setSidebarExpanded,
     sidebarExpanded,
-    isLoading,
   } = appStore;
   const [isPinned, setIsPinned] = createSignal(appStore.config().sidebarPinned || false);
 

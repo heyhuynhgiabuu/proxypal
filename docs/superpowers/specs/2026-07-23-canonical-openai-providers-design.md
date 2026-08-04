@@ -12,17 +12,20 @@ because the API-key persistence fix created **two competing persisted sources**
 for the same OpenAI-compatible providers.
 
 ### Bug A — Persistence layer (`api_keys.rs`)
+
 `set_openai_compatible_providers()` converted `OpenAICompatibleProvider`
 (rich: `api_key_entries[]`, `prefix`, `headers`, per-key `proxy_url`) into the
 legacy `AmpOpenAIProvider` (single `api_key`, no prefix). Only the first key
 survived; the rest and the prefix were dropped on restart.
 
 ### Bug B — YAML generator (`proxy.rs`)
+
 The proxy YAML is regenerated from `config.json` on restart. Four builders
 omitted `prefix`: `build_openai_compat_section`, `build_claude_api_key_section`,
 `build_gemini_api_key_section`, `build_codex_api_key_section`.
 
 ### Defect C — Two competing persisted representations (review blocker)
+
 `set_openai_compatible_providers` writes **both** `openai_compatible_providers`
 (rich) and `amp_openai_providers` (flat), while `build_openai_compat_section`
 prefers the rich field whenever non-empty. The existing **Settings UI** edits
@@ -31,6 +34,7 @@ field, later Settings edits/additions/deletions are ignored by generated proxy
 config, and can be overwritten later. Data loss.
 
 ### Tray gap D
+
 On macOS, closing the window hides to tray (Dock icon gone, Mission Control
 hidden) but the only way to quit is the tray menu's "Quit ProxyPal". This
 already exists and works (`app.exit(0)` + `ExitRequested` cleanup of
@@ -38,6 +42,7 @@ proxy/copilot/SSH). No code change needed; the gap is discoverability and
 **proof** the Dock/black-window fix is real.
 
 ### Upstream lag E
+
 Local `main` is v0.4.47; upstream released v0.4.48 (adds Gemini 3.6 flash-high
 override + a test in `proxy.rs`, touches `proxy.rs` away from our edits →
 trivial conflict expected).
@@ -89,6 +94,7 @@ this PR makes OpenAI-compatible behave identically.
 ## Components & changes
 
 ### 1. `src-tauri/src/commands/api_keys.rs` — NO change (already a derived mirror)
+
 The existing `set_openai_compatible_providers` derives `amp_openai_providers` from
 the rich list it just wrote — i.e. amp is a **derived flat mirror**, not an
 independent source. That derivation is correct and must stay: it keeps the
@@ -97,6 +103,7 @@ after an API Keys edit. The real defect is only in the **Settings write path**
 (`save_config`), addressed in §4 below.
 
 ### 2. `src-tauri/src/commands/proxy.rs` — generator reads rich only
+
 - `build_openai_compat_section`: delete the `else` fallback branch that reads
   `amp_openai_providers`. Read `openai_compatible_providers` exclusively.
 - `build_claude_api_key_section`, `build_gemini_api_key_section`,
@@ -105,8 +112,10 @@ after an API Keys edit. The real defect is only in the **Settings write path**
   commit; verify they survive the v0.4.48 rebase).
 
 ### 3. `src-tauri/src/config.rs` — migration on load (amp → rich, once)
+
 In `migrate_config`, after the existing `amp_openai_provider` → `amp_openai_providers`
 migration:
+
 - If `openai_compatible_providers` is empty and `amp_openai_providers` is
   non-empty: map each `AmpOpenAIProvider` → `OpenAICompatibleProvider`
   (`api_key_entries: [{ api_key }]`, no prefix/headers, models mapped). Set
@@ -124,11 +133,13 @@ unit-testable. This IS the "explicit synchronization at every write path" the
 owner asked for, concentrated in one place.
 
 ### 4. `src-tauri/src/commands/config.rs` — Settings write path lifts amp → rich (root cause fix)
+
 **This is the core fix Defect C.** `save_config` currently persists whatever
 `amp_openai_providers` the Settings UI sent and never touches rich, so rich goes
 stale and the generator ignores Settings edits. Fix: before `persist_config`, if
 the incoming config has `openai_compatible_providers` empty (the signal the
 frontend sends, see §5) and `amp_openai_providers` non-empty:
+
 - For each `AmpOpenAIProvider`, look up a matching in-state rich entry
   by `(name, base_url)`. If matched, **update the first entry's `api_key`** to
   `amp.api_key` and keep any additional entries (per-key `proxy_url` across
@@ -138,11 +149,12 @@ frontend sends, see §5) and `amp_openai_providers` non-empty:
   dropped (the Settings intent is authoritative for the provider set).
 - Then set `amp_openai_providers = rich_to_amp(rich)` so the flat mirror is
   faithful to the lifted rich.
-Reconciliation by `(name, base_url)` is a heuristic with a known ceiling: two
-providers with the same name+baseUrl would collide. Mark it `ponytail:` in the
-code. The UI already dedupes by name, so this is acceptable.
+  Reconciliation by `(name, base_url)` is a heuristic with a known ceiling: two
+  providers with the same name+baseUrl would collide. Mark it `ponytail:` in the
+  code. The UI already dedupes by name, so this is acceptable.
 
 ### 5. Frontend — `src/components/settings/OpenAIProviderSettings.tsx`
+
 `saveOpenAIProvider` / `deleteOpenAIProvider` continue to mutate `ampOpenaiProviders`
 and call `saveConfig(newConfig)`. **Required single-line change:** in
 `OpenAIProviderSettings.tsx`, when building `newConfig`, set
@@ -155,12 +167,14 @@ Settings edit — reintroducing Defect C. The diff is one line per save/delete
 handler; the rest of Settings is unchanged.
 
 ### 6. Read sites for model routing — `src/pages/Settings.tsx`, `src/components/settings/AdvancedSettings.tsx`
+
 These read `ampOpenaiProviders` to list model aliases for routing. They keep
 working because `migrate_config` repopulates `ampOpenai_providers` as the
 flattened mirror of rich on load. No change needed unless we choose to migrate
 these reads to rich in the same PR (deferred — out of scope unless trivial).
 
 ### 7. Tray — `src-tauri/src/lib.rs` — no code change
+
 `setup_tray` already builds the menu with `Toggle Proxy` / `Open Dashboard` /
 `Quit ProxyPal`; the `quit` handler calls `app.exit(0)`; `ExitRequested` kills
 the proxy, copilot, and SSH. `show_main_window` / `hide_main_window` already
@@ -170,6 +184,7 @@ validates the existing fix with a **manual checklist** (below), not code.
 ## Testing
 
 ### Rust unit tests (cargo) — required, automated
+
 Add to `src-tauri/src/commands/proxy.rs` and `src-tauri/src/config.rs` test
 modules, following the existing `build_proxy_config_yaml_includes_xai_api_key_entries`
 pattern:
@@ -198,6 +213,7 @@ These are pure, headless, fast, and cover both the API Keys and Settings flows
 across a restart — exactly what the owner asked for.
 
 ### Manual Dock/black-window checklist — required, reproducible
+
 Checked by the user locally before push, recorded verbatim in the PR body:
 
 - [ ] Start app, open window. Dock icon visible. Window paints (not black).

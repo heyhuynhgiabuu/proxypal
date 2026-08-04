@@ -38,6 +38,7 @@ OpenAI→Claude (`internal/translator/openai/claude/openai_claude_request.go:65-
 
 Replace the two widgets with ONE "Reasoning level" selector (none/low/medium/high/xhigh)
 that drives reasoning for ALL model families:
+
 - Claude/Antigravity (budget_tokens, via level→budget conversion)
 - Gemini 3 (generationConfig.thinkingConfig.thinkingLevel)
 - OpenAI-compatible providers (reasoning_effort, new — previously impossible)
@@ -174,6 +175,7 @@ payload:
 ```
 
 Details:
+
 - The `default` claude rules keep their existing model lists; only the budget value
   becomes `level_to_budget(level)`. When level is `"none"`, budget 0 disables thinking
   (matches CLIProxyAPI `ConvertLevelToBudget("none") → 0`).

@@ -21,32 +21,39 @@
 ### Task 1: Rust — config schema, migration, remove thinking-budget commands
 
 **Files:**
+
 - Modify: `src-tauri/src/config.rs` (fields ~72-74, Default ~185-188, `migrate_config`)
 - Modify: `src-tauri/src/commands/settings.rs` (delete 2 commands)
 - Modify: `src-tauri/src/lib.rs` (~479-480, unregister)
 
 **Interfaces:**
+
 - Consumes: `reasoning_effort_level: String` (already in `AppConfig`)
 - Produces: `AppConfig` without `thinking_budget_mode`/`thinking_budget_custom`; migration maps old values → `reasoning_effort_level`
 
 - [ ] **Step 1: Remove fields from `AppConfig` and `Default`**
 
 In `src-tauri/src/config.rs`, delete:
+
 ```rust
     pub thinking_budget_mode: String,
     #[serde(default)]
     pub thinking_budget_custom: u32,
 ```
+
 and in the `Default` impl delete:
+
 ```rust
             thinking_budget_mode: "medium".to_string(),
             thinking_budget_custom: 16000,
 ```
+
 (Keep `reasoning_effort_level: "medium".to_string()` and `gemini_thinking_injection`.)
 
 - [ ] **Step 2: Add migration in `migrate_config`**
 
 In `src-tauri/src/config.rs` `migrate_config`, add BEFORE the `changed` return (after the amp→rich block):
+
 ```rust
     // Migrate legacy thinking budget (Claude) to the unified reasoning level.
     // CLIProxyAPI level->budget map: none=0, low=1024, medium=8192, high=24576, xhigh=32768.
@@ -77,7 +84,9 @@ In `src-tauri/src/config.rs` `migrate_config`, add BEFORE the `changed` return (
         changed = true;
     }
 ```
+
 Note: the `thinking_budget_mode` field must still be parsed from old JSON — since we removed the struct fields, add them back with `skip_serializing` (same pattern as `amp_openai_providers`):
+
 ```rust
     /// DEPRECATED: parsed from old config.json for one-time migration only; never written.
     #[serde(default, skip_serializing)]
@@ -94,6 +103,7 @@ In `src-tauri/src/commands/settings.rs`, delete `get_thinking_budget_settings` a
 - [ ] **Step 4: Unregister commands in `lib.rs`**
 
 In `src-tauri/src/lib.rs`, delete:
+
 ```rust
             // Thinking Budget Settings
             commands::settings::get_thinking_budget_settings,
@@ -103,6 +113,7 @@ In `src-tauri/src/lib.rs`, delete:
 - [ ] **Step 5: Add migration test**
 
 In `src-tauri/src/config.rs` `mod tests`, add:
+
 ```rust
     #[test]
     fn migrates_thinking_budget_to_reasoning_level() {
@@ -150,6 +161,7 @@ In `src-tauri/src/config.rs` `mod tests`, add:
         let _ = fs::remove_dir_all(dir);
     }
 ```
+
 Wait — check migration trigger: `!config.thinking_budget_mode.is_empty() && config.reasoning_effort_level.is_empty()`. The Default sets `reasoning_effort_level: "medium"`, so `AppConfig::default()` has it non-empty. But old JSON has NO `reasoningEffortLevel` key → serde default `""`? Check the struct: `#[serde(default)] pub reasoning_effort_level: String` — Default for String is `""`, so old JSON → empty → migration triggers. Default impl's `"medium"` only applies to `AppConfig::default()` (new files). Good.
 
 - [ ] **Step 6: Run tests**
@@ -169,15 +181,18 @@ git commit -m "refactor: replace thinking budget with unified reasoning level (m
 ### Task 2: Rust — YAML generation from reasoning level
 
 **Files:**
+
 - Modify: `src-tauri/src/commands/proxy.rs` (`resolve_thinking_budget`, `build_payload_section`, `build_gemini_override_section`, `build_proxy_config_yaml` ~65-80)
 
 **Interfaces:**
+
 - Consumes: `config.reasoning_effort_level: String`
 - Produces: `build_payload_section(config) -> String` with claude budget rules, gemini override, and openai-compat override rule
 
 - [ ] **Step 1: Replace `resolve_thinking_budget` with level helpers**
 
 Delete `resolve_thinking_budget(config) -> (u32, &str)` (lines ~469-488). Add:
+
 ```rust
 /// CLIProxyAPI level->budget map (internal/thinking/convert.go).
 fn level_to_budget(level: &str) -> u32 {
@@ -205,11 +220,13 @@ fn level_to_gemini(level: &str) -> &'static str {
 - [ ] **Step 2: Rewrite `build_payload_section`**
 
 Replace the function (lines ~490-557) with a level-driven version. Keep the existing claude model lists (claude-sonnet-4-5 group + claude-opus-4-5/4-6 group) and the gemini override rules, but:
+
 - Signature: `fn build_payload_section(config: &AppConfig) -> String`
 - Budget: `let budget = level_to_budget(&config.reasoning_effort_level);`
 - Claude default rules use `budget` in both `params` spots.
 - Gemini override: `if config.gemini_thinking_injection { build_gemini_override_section(level_to_gemini(&config.reasoning_effort_level)) } else { String::new() }` — NOTE: `build_gemini_override_section` currently emits `  override:` as its first line and appends a trailing blank line. Verify against the format! template: the template ends with `{}` for the override section. Keep the structure identical, just change the level argument.
 - The openai-compat rule MUST be emitted ALWAYS (independent of the gemini toggle):
+
 ```rust
 /// `override:` section for OpenAI-compatible providers. Emitted unconditionally.
 /// The `*` glob matches any model; `protocol: "openai"` restricts to OpenAI-compat
@@ -227,7 +244,9 @@ fn build_openai_compat_reasoning_rules(level: &str) -> String {
     )
 }
 ```
+
 - In `build_payload_section`, assemble the `{}` slot as:
+
 ```rust
     let override_section = {
         let gemini_part = if config.gemini_thinking_injection {
@@ -242,18 +261,22 @@ fn build_openai_compat_reasoning_rules(level: &str) -> String {
         }
     };
 ```
-  This keeps a single `override:` key (duplicate-key YAML error otherwise — verified in logs:
-  `mapping key "override" already defined`) while emitting the openai rule regardless of the
-  gemini toggle.
+
+This keeps a single `override:` key (duplicate-key YAML error otherwise — verified in logs:
+`mapping key "override" already defined`) while emitting the openai rule regardless of the
+gemini toggle.
 
 - [ ] **Step 3: Update `build_proxy_config_yaml` call site**
 
 At line ~78-79, replace:
+
 ```rust
     let (thinking_budget, thinking_mode_display) = resolve_thinking_budget(config);
     let payload_section = build_payload_section(config, thinking_budget, thinking_mode_display);
 ```
+
 with:
+
 ```rust
     let payload_section = build_payload_section(config);
 ```
@@ -261,8 +284,10 @@ with:
 - [ ] **Step 4: Update existing test + add new tests**
 
 In `mod tests` of `proxy.rs`:
+
 - `build_proxy_config_yaml_forces_high_thinking_for_gemini_3_6_flash_high`: keep the assertion that the gemini-3.6 override exists, but the test config must now set `reasoning_effort_level: "high"` (it currently sets thinking_budget_mode — update the config construction).
 - Add:
+
 ```rust
     #[test]
     fn yaml_emits_openai_compat_reasoning_effort_from_level() {
@@ -302,17 +327,20 @@ git commit -m "feat: emit reasoning_effort for OpenAI-compat providers + unified
 ### Task 3: TypeScript — remove thinking-budget bindings
 
 **Files:**
+
 - Modify: `src/lib/tauri/settings.ts` (delete `ThinkingBudgetSettings` + 2 fns)
 - Modify: `src/lib/tauri/utils.ts` (delete `getThinkingBudgetTokens`)
 - Modify: `src/lib/tauri/index.ts` if it re-exports them (check)
 
 **Interfaces:**
+
 - Consumes: nothing new
 - Produces: only `ReasoningEffortLevel`, `getReasoningEffortSettings`, `setReasoningEffortSettings` remain
 
 - [ ] **Step 1: Edit `settings.ts`**
 
 Delete:
+
 ```ts
 export interface ThinkingBudgetSettings {
   mode: "low" | "medium" | "high" | "custom";
@@ -349,16 +377,19 @@ git commit -m "refactor(ts): drop thinking-budget bindings"
 ### Task 4: Frontend — one Reasoning level card + i18n
 
 **Files:**
+
 - Rewrite: `src/components/settings/ThinkingReasoningSettings.tsx`
 - Modify: `src/i18n/en.ts`, `src/i18n/vi.ts`, `src/i18n/zh-CN.ts`
 
 **Interfaces:**
+
 - Consumes: `getReasoningEffortSettings`, `setReasoningEffortSettings`, `ReasoningEffortLevel` from `../../lib/tauri`; `getConfig`/`saveConfig` (Gemini toggle)
 - Produces: single card with level select + Gemini injection switch
 
 - [ ] **Step 1: Rewrite the component**
 
 Replace the whole file. Remove: `getThinkingBudgetSettings`, `setThinkingBudgetSettings`, `getThinkingBudgetTokens` imports; `thinkingBudgetMode`, `thinkingBudgetCustom`, `savingThinkingBudget` signals; `saveThinkingBudget`. Remove the entire Thinking Budget card JSX (the first `<div class="space-y-4">` block with `settings.thinkingBudget.title`). Keep:
+
 - `geminiThinkingInjection` signal + `saveGeminiThinkingInjection` (unchanged logic)
 - `reasoningEffortLevel` signal + `saveReasoningEffort` (unchanged logic)
 - The reasoning card: update the description to mention Claude, Gemini, OpenAI-compatible providers and agents. Keep the select (none/low/medium/high/xhigh), the current-value display, Apply button, and the per-request suffix note.
@@ -367,6 +398,7 @@ Replace the whole file. Remove: `getThinkingBudgetSettings`, `setThinkingBudgetS
 - [ ] **Step 2: Update i18n**
 
 In `en.ts` (and mirror in `vi.ts`, `zh-CN.ts`):
+
 - Update `settings.reasoning.descriptionPrefix`/`descriptionSuffix` to mention OpenAI-compatible providers (check current text first).
 - Remove `settings.thinkingBudget.*` keys that are now unused EXCEPT `geminiInjection.*` (keep `settings.thinkingBudget.geminiInjection.label/description` — but they're nested under `thinkingBudget`; if removing the parent block is awkward, keep the whole `thinkingBudget` section key but only with `geminiInjection`). Simplest safe move: keep the `thinkingBudget` key object containing only `geminiInjection`, and delete the other keys. Verify with tsc.
 
@@ -395,6 +427,7 @@ Run: `cd src-tauri && cargo check && cargo test` → all green. `pnpm tsc --noEm
 - [ ] **Step 2: Manual dev checklist**
 
 Run: `pnpm tauri dev`
+
 1. Settings → one "Reasoning level" card; select high → Apply → restart app → level persists (`config.json` has `reasoningEffortLevel: "high"`, no `thinkingBudget*` keys).
 2. `proxy-config.yaml`: claude default rules have `thinking.budget_tokens: 24576` (high); gemini override rules present; `override` contains `- name: "*"` + `protocol: "openai"` + `reasoning_effort: "high"`.
 3. curl through proxy: `glm-5.2:cloud` (ollama) — model responds; reasoning field length differs between low/high with `max_tokens: 500`. `z-ai/glm-5.2` (nvidia) — responds (may be slow).
@@ -413,6 +446,7 @@ The manual payload test earlier may have left `proxy-config.yaml.bak-test` — i
 - [ ] **Step 1: Verify spec/plan committed**
 
 Run: `git status --short` — spec (already committed), plan (commit now):
+
 ```bash
 git add docs/superpowers/plans/2026-08-04-unified-reasoning-level.md
 git commit -m "docs: implementation plan for unified reasoning level"

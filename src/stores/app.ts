@@ -48,7 +48,6 @@ function createAppStore() {
 
   // Config
   const [config, setConfig] = createSignal<AppConfig>({
-    openaiCompatibleProviders: [],
     autoStart: true,
     copilot: {
       accountType: "individual",
@@ -63,6 +62,7 @@ function createAppStore() {
     locale: "en",
     loggingToFile: false,
     logsMaxTotalSizeMb: 100,
+    openaiCompatibleProviders: [],
     port: 8317,
     proxyUrl: "",
     quotaSwitchPreviewModel: false,

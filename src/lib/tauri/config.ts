@@ -16,7 +16,6 @@ export interface AppConfig {
     fork?: boolean;
     name: string;
   }>;
-  openaiCompatibleProviders: OpenAICompatibleProvider[];
   /** @deprecated Legacy Amp CLI fields retained for config.json compatibility */
   ampRoutingMode?: string;
   autoStart: boolean;
@@ -31,6 +30,7 @@ export interface AppConfig {
   loggingToFile: boolean;
   logsMaxTotalSizeMb: number;
   managementKey?: string;
+  openaiCompatibleProviders: OpenAICompatibleProvider[];
   port: number;
   proxyApiKey?: string;
   proxyPassword?: string;
