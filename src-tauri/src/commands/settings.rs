@@ -2,7 +2,7 @@
 
 use crate::config::save_config_to_file;
 use crate::state::AppState;
-use crate::types::{ReasoningEffortSettings, ThinkingBudgetSettings};
+use crate::types::ReasoningEffortSettings;
 use crate::{build_management_client, get_management_key, get_management_url};
 use tauri::State;
 
@@ -55,49 +55,6 @@ pub async fn get_claude_code_settings() -> Result<crate::types::agents::ClaudeCo
     })
 }
 
-#[tauri::command]
-pub async fn get_thinking_budget_settings(
-    state: State<'_, AppState>,
-) -> Result<ThinkingBudgetSettings, String> {
-    let config = state.config.lock().unwrap();
-    let mode = if config.thinking_budget_mode.is_empty() {
-        "medium".to_string()
-    } else {
-        config.thinking_budget_mode.clone()
-    };
-    let custom_budget = if config.thinking_budget_custom == 0 {
-        16000
-    } else {
-        config.thinking_budget_custom
-    };
-    Ok(ThinkingBudgetSettings {
-        mode,
-        custom_budget,
-    })
-}
-
-#[tauri::command]
-pub async fn set_thinking_budget_settings(
-    state: State<'_, AppState>,
-    settings: ThinkingBudgetSettings,
-) -> Result<(), String> {
-    {
-        let mut config = state.config.lock().unwrap();
-        config.thinking_budget_mode = settings.mode;
-        config.thinking_budget_custom = settings.custom_budget;
-    }
-    let config_to_save = {
-        let config = state.config.lock().unwrap();
-        config.clone()
-    };
-    crate::commands::config::save_config(state, config_to_save)?;
-
-    // Config is saved - proxy will pick up new thinking budget on next request
-
-    Ok(())
-}
-
-// ============================================
 // Reasoning Effort Settings (GPT/Codex models)
 // ============================================
 

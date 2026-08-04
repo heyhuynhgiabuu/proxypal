@@ -475,9 +475,6 @@ pub fn run() {
             commands::api_keys::set_vertex_api_keys,
             commands::api_keys::add_vertex_api_key,
             commands::api_keys::delete_vertex_api_key,
-            // Thinking Budget Settings
-            commands::settings::get_thinking_budget_settings,
-            commands::settings::set_thinking_budget_settings,
             // Reasoning Effort Settings (GPT/Codex)
             commands::settings::get_reasoning_effort_settings,
             commands::settings::set_reasoning_effort_settings,

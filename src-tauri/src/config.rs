@@ -68,9 +68,11 @@ pub struct AppConfig {
     pub xai_api_keys: Vec<XaiApiKey>,
     #[serde(default)]
     pub vertex_api_keys: Vec<VertexApiKey>,
-    #[serde(default)]
+    /// DEPRECATED: parsed from old config.json for one-time migration only; never written.
+    #[serde(default, skip_serializing)]
     pub thinking_budget_mode: String,
-    #[serde(default)]
+    /// DEPRECATED: parsed from old config.json for one-time migration only; never written.
+    #[serde(default, skip_serializing)]
     pub thinking_budget_custom: u32,
     #[serde(default = "default_gemini_thinking_injection")]
     pub gemini_thinking_injection: bool,
@@ -182,8 +184,8 @@ impl Default for AppConfig {
             codex_api_keys: Vec::new(),
             xai_api_keys: Vec::new(),
             vertex_api_keys: Vec::new(),
-            thinking_budget_mode: "medium".to_string(),
-            thinking_budget_custom: 16000,
+            thinking_budget_mode: String::new(), // DEPRECATED, read-only migration input
+            thinking_budget_custom: 0,           // DEPRECATED, read-only migration input
             gemini_thinking_injection: true,
             reasoning_effort_level: "medium".to_string(),
             close_to_tray: true,
@@ -313,6 +315,35 @@ fn migrate_config(config: &mut AppConfig) -> bool {
                 prefix: None,
             })
             .collect();
+        changed = true;
+    }
+
+    // Migrate legacy thinking budget (Claude) to the unified reasoning level.
+    // CLIProxyAPI level->budget map: none=0, low=1024, medium=8192, high=24576, xhigh=32768.
+    // Old budgets: low=2048 (-> low), medium=8192 (-> medium), high=32768 (-> xhigh).
+    // ponytail: legacy "custom" maps by old thresholds; old high 32768 == new xhigh.
+    // Acceptable one-time approximation.
+    if !config.thinking_budget_mode.is_empty() && config.reasoning_effort_level.is_empty() {
+        let level = match config.thinking_budget_mode.as_str() {
+            "low" => "low".to_string(),
+            "high" => "xhigh".to_string(), // old high = 32768 == xhigh
+            "custom" => {
+                let custom = if config.thinking_budget_custom == 0 {
+                    8192
+                } else {
+                    config.thinking_budget_custom
+                };
+                match custom {
+                    0..=1024 => "low".to_string(),
+                    1025..=8192 => "medium".to_string(),
+                    8193..=24576 => "high".to_string(),
+                    _ => "xhigh".to_string(),
+                }
+            }
+            _ => "medium".to_string(), // "medium" or anything unknown
+        };
+        eprintln!("[ProxyPal] Migrating thinking budget to reasoning level: {}", level);
+        config.reasoning_effort_level = level;
         changed = true;
     }
 
@@ -657,6 +688,52 @@ mod tests {
         assert!(!persisted.contains("ampOpenaiProviders"));
         assert!(!persisted.contains("ampOpenaiProvider"));
         assert!(persisted.contains("openaiCompatibleProviders"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn migrates_thinking_budget_to_reasoning_level() {
+        let dir = test_dir("config-budget-to-level");
+        let path = dir.join("config.json");
+
+        // Old config with thinking budget, no reasoning level.
+        let legacy_json = r#"{
+  "port": 8317,
+  "autoStart": true,
+  "launchAtLogin": false,
+  "thinkingBudgetMode": "high",
+  "thinkingBudgetCustom": 16000
+}"#;
+        fs::write(&path, legacy_json).unwrap();
+        let loaded = load_config_from_path(&path);
+        assert_eq!(loaded.reasoning_effort_level, "xhigh");
+        // Legacy fields never written back.
+        let persisted = fs::read_to_string(&path).unwrap();
+        assert!(!persisted.contains("thinkingBudget"));
+
+        // custom mapping: 500 -> low, 40000 -> xhigh
+        let legacy_json = r#"{
+  "port": 8317,
+  "autoStart": true,
+  "launchAtLogin": false,
+  "thinkingBudgetMode": "custom",
+  "thinkingBudgetCustom": 500
+}"#;
+        fs::write(&path, legacy_json).unwrap();
+        let loaded = load_config_from_path(&path);
+        assert_eq!(loaded.reasoning_effort_level, "low");
+
+        let legacy_json = r#"{
+  "port": 8317,
+  "autoStart": true,
+  "launchAtLogin": false,
+  "thinkingBudgetMode": "custom",
+  "thinkingBudgetCustom": 40000
+}"#;
+        fs::write(&path, legacy_json).unwrap();
+        let loaded = load_config_from_path(&path);
+        assert_eq!(loaded.reasoning_effort_level, "xhigh");
 
         let _ = fs::remove_dir_all(dir);
     }
