@@ -85,7 +85,7 @@ fn main() {
             );
         } else {
             println!("cargo:warning=Downloading sidecar from CLIProxyAPI releases...");
-            download_binary(&binary_name, &binaries_dir);
+            download_binary(&binary_name);
         }
     }
 
@@ -120,96 +120,44 @@ fn is_valid_binary(path: &Path) -> bool {
 }
 
 /// Download the sidecar binary using the cross-platform Node.js script.
-/// Falls back to platform-specific shell scripts if Node is unavailable.
-fn download_binary(binary_name: &str, binaries_dir: &Path) {
+/// This is the only supported download path because it resolves the pinned
+/// version and verifies the release checksum before installing the binary.
+fn download_binary(binary_name: &str) {
     let project_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let node_script = project_root.join("scripts").join("update-sidecar.mjs");
 
-    // Prefer the cross-platform Node.js script
-    if node_script.exists() {
-        let status = Command::new("node")
-            .arg(&node_script)
-            .arg("--force")
-            .status();
-
-        match status {
-            Ok(s) if s.success() => {
-                println!("cargo:warning=Sidecar binary downloaded successfully");
-                return;
-            }
-            Ok(s) => {
-                println!(
-                    "cargo:warning=Node script exited with code {:?}, trying shell fallback",
-                    s.code()
-                );
-            }
-            Err(e) => {
-                println!(
-                    "cargo:warning=Failed to run node ({}), trying shell fallback",
-                    e
-                );
-            }
-        }
+    if !node_script.exists() {
+        panic!(
+            "Pinned sidecar updater is missing: {}.\n\
+            Restore scripts/update-sidecar.mjs and run: pnpm update-sidecar --force",
+            node_script.display()
+        );
     }
 
-    // Fallback to platform-specific shell scripts in src-tauri/scripts/
-    let scripts_dir = binaries_dir.parent().unwrap().join("scripts");
-
-    #[cfg(not(windows))]
-    {
-        let script_path = scripts_dir.join("download-binaries.sh");
-        if script_path.exists() {
-            let status = Command::new("bash")
-                .arg(&script_path)
-                .arg(binary_name)
-                .status()
-                .expect("Failed to execute download script");
-
-            if !status.success() {
-                panic!(
-                    "Failed to download sidecar binary: {}.\n\
-                    Run manually: pnpm update-sidecar --force\n\
-                    Or: bash src-tauri/scripts/download-binaries.sh {}",
-                    binary_name, binary_name
-                );
-            }
-        } else {
+    let status = Command::new("node")
+        .arg(&node_script)
+        .arg("--force")
+        .arg(binary_name)
+        .status()
+        .unwrap_or_else(|e| {
             panic!(
-                "Sidecar binary missing: {}.\n\
-                Run: pnpm update-sidecar --force",
-                binary_name
-            );
-        }
+                "Failed to run the pinned sidecar updater: {}.\n\
+                Install Node.js and run: pnpm update-sidecar --force",
+                e
+            )
+        });
+
+    if !status.success() {
+        panic!(
+            "Pinned sidecar updater failed for {} with code {:?}.\n\
+            Run manually: pnpm update-sidecar --force {}",
+            binary_name,
+            status.code(),
+            binary_name
+        );
     }
 
-    #[cfg(windows)]
-    {
-        let script_path = scripts_dir.join("download-binaries.ps1");
-        if script_path.exists() {
-            let status = Command::new("powershell")
-                .arg("-ExecutionPolicy")
-                .arg("Bypass")
-                .arg("-File")
-                .arg(&script_path)
-                .arg(binary_name)
-                .status()
-                .expect("Failed to execute download script");
-
-            if !status.success() {
-                panic!(
-                    "Failed to download sidecar binary: {}.\n\
-                    Run manually: pnpm update-sidecar --force",
-                    binary_name
-                );
-            }
-        } else {
-            panic!(
-                "Sidecar binary missing: {}.\n\
-                Run: pnpm update-sidecar --force",
-                binary_name
-            );
-        }
-    }
+    println!("cargo:warning=Sidecar binary downloaded successfully");
 }
 
 fn get_binary_name(target: &str) -> String {

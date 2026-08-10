@@ -687,6 +687,7 @@ export const vi = {
         label: "Chiến lược định tuyến",
         roundRobin: "Xoay vòng (phân bổ đều)",
         sequential: "Tuần tự (theo thứ tự)",
+        weightedRoundRobin: "Xoay vòng theo trọng số (phân bổ theo trọng số tài khoản)",
       },
     },
     oauthExcluded: {

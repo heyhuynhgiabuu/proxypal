@@ -774,33 +774,6 @@ export function DashboardPage() {
           {/* === PikaAI Banner === */}
           <PikaAiBanner />
 
-          <div class="relative overflow-hidden rounded-xl shadow-xl">
-            <div class="absolute inset-0 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950" />
-            <div class="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-cyan-400 via-sky-500 to-cyan-400" />
-            <div class="relative flex items-center justify-between gap-4 px-4 py-5 sm:px-6">
-              <div class="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
-                <img
-                  alt="Polime Shop"
-                  class="h-12 w-12 shrink-0 rounded-lg object-contain sm:h-14 sm:w-14"
-                  src="/polime.png"
-                />
-
-                <p class="whitespace-pre-line text-xs leading-6 text-slate-300 sm:text-sm">
-                  {t("dashboard.chatgptPlusPromo")}
-                </p>
-              </div>
-              <div class="flex shrink-0 items-center">
-                <button
-                  class="whitespace-nowrap rounded-lg bg-cyan-500 px-3 py-2 text-xs font-semibold text-white transition-all duration-200 hover:bg-cyan-400 hover:shadow-lg hover:shadow-cyan-500/25 sm:px-4 sm:text-sm"
-                  onClick={() => void openUrlInBrowser("https://t.me/AI_Shop1998_bot")}
-                  type="button"
-                >
-                  {t("dashboard.chatgptPlusPromoCta")}
-                </button>
-              </div>
-            </div>
-          </div>
-
           {/* === ZONE 1: Onboarding (shows until setup complete) === */}
           <OnboardingChecklist
             firstDisconnectedProvider={disconnectedProviders()[0]?.provider}

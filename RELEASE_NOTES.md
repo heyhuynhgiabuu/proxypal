@@ -1,6 +1,29 @@
-# ProxyPal v0.4.48
+# ProxyPal v0.4.49
 
 **Release status:** Pending publication
+
+## CLIProxyAPI v7.2.125
+
+- Updates the pinned mainline sidecar from v7.2.95 to v7.2.125 across local development, CI, and release builds.
+- Includes upstream reliability, translation, routing, OAuth refresh, session persistence, and large-payload performance improvements.
+- Adds smoke coverage for stable management contracts covering configuration, usage, logging, auth files, and authenticated error handling. The local macOS ARM run passed; other release platforms remain CI gates.
+
+## Routing and release safety
+
+- Adds weighted round-robin routing alongside the existing round-robin and fill-first strategies.
+- Generates sidecar release notes from the exact bundled tag instead of whichever upstream release is latest when publishing runs.
+- Removes legacy unpinned sidecar download fallbacks so local builds use the checksum-verifying pinned updater.
+
+## Dashboard and maintenance
+
+- Temporarily hides the Polime dashboard promotion while retaining its localized copy and asset for restoration.
+- Removes verified unused frontend packages and keeps Fallow dependency checks free of actionable dead-code findings.
+
+---
+
+# ProxyPal v0.4.48
+
+**Released:** 2026-07-22
 
 ## Gemini reliability
 

@@ -353,6 +353,9 @@ export function ProxySettings(props: ProxySettingsProps) {
             value={local.config().routingStrategy}
           >
             <option value="round-robin">{t("settings.network.routingStrategy.roundRobin")}</option>
+            <option value="weighted-round-robin">
+              {t("settings.network.routingStrategy.weightedRoundRobin")}
+            </option>
             <option value="fill-first">{t("settings.network.routingStrategy.fillFirst")}</option>
           </select>
           <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">

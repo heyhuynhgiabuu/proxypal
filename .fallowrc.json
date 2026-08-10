@@ -1,0 +1,12 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  "ignoreDependencies": [
+    "@nkzw/eslint-plugin",
+    "eslint-plugin-no-only-tests",
+    "eslint-plugin-perfectionist",
+    "eslint-plugin-react-hooks",
+    "eslint-plugin-unused-imports",
+    "tailwindcss"
+  ],
+  "ignorePatterns": [".opencode/**", ".pi/**"]
+}

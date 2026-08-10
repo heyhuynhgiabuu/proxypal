@@ -680,6 +680,7 @@ export const zhCN = {
         label: "路由策略",
         roundRobin: "轮询（均匀分配）",
         sequential: "顺序（按顺序）",
+        weightedRoundRobin: "加权轮询（按账号权重分配）",
       },
     },
     oauthExcluded: {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { en } from "./en";
+import { vi } from "./vi";
 import { zhCN } from "./zh-CN";
 
 function flattenKeys(value: unknown, prefix: string = ""): string[] {
@@ -27,5 +28,15 @@ describe("i18n dictionary parity", () => {
 
     const missing = enKeys.filter((key) => !zhKeys.has(key));
     expect(missing).toEqual([]);
+  });
+
+  it("defines weighted round-robin labels in every dictionary", () => {
+    const labels = [
+      en.settings.network.routingStrategy.weightedRoundRobin,
+      vi.settings.network.routingStrategy.weightedRoundRobin,
+      zhCN.settings.network.routingStrategy.weightedRoundRobin,
+    ];
+
+    expect(labels.every((label) => typeof label === "string" && label.length > 0)).toBe(true);
   });
 });

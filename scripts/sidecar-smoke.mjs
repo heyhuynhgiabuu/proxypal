@@ -10,6 +10,7 @@
 // A temporary directory is created and cleaned up on exit.
 
 import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { existsSync, mkdirSync, writeFileSync, rmSync, chmodSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
@@ -64,7 +65,10 @@ const configYaml = [
   `  - "${proxyApiKey}"`,
   `debug: false`,
   `usage-statistics-enabled: true`,
+  `logging-to-file: true`,
+  `logs-max-total-size-mb: 1`,
   `request-retry: 3`,
+  `max-retry-interval: 60`,
   `quota-exceeded:`,
   `  switch-project: true`,
   `  switch-preview-model: true`,
@@ -72,7 +76,7 @@ const configYaml = [
   `  allow-remote: false`,
   `  secret-key: "${managementKey}"`,
   `  disable-control-panel: true`,
-  `request-log: false`,
+  `request-log: true`,
   `commercial-mode: false`,
   `ws-auth: true`,
 ].join("\n");
@@ -98,34 +102,73 @@ sidecar.stderr.on("data", (chunk) => {
   sidecarStderr += chunk.toString();
 });
 
-let killed = false;
+let cleanupPromise = null;
 
-function cleanup() {
-  if (killed) return;
-  killed = true;
-  try {
-    sidecar.kill("SIGTERM");
-    // Give it a moment to shut down gracefully
-    setTimeout(() => {
-      try {
-        sidecar.kill("SIGKILL");
-      } catch {}
-    }, 2000);
-  } catch {
-    // Process may already be dead
-  }
-  try {
-    rmSync(tmpRoot, { recursive: true, force: true });
-  } catch {}
+async function waitForSidecarExit(timeoutMs) {
+  if (sidecar.exitCode !== null) return;
+  await Promise.race([
+    once(sidecar, "exit"),
+    new Promise((resolve) => setTimeout(resolve, timeoutMs)),
+  ]);
 }
 
-process.on("exit", cleanup);
-process.on("SIGINT", () => {
-  cleanup();
+async function terminateSidecar(signal, timeoutMs) {
+  try {
+    sidecar.kill(signal);
+    await waitForSidecarExit(timeoutMs);
+    return sidecar.exitCode !== null;
+  } catch {
+    // Process may already be dead.
+    return sidecar.exitCode !== null;
+  }
+}
+
+async function stopSidecar() {
+  if (sidecar.exitCode !== null) return true;
+  const terminated = await terminateSidecar("SIGTERM", 2000);
+  return terminated || (await terminateSidecar("SIGKILL", 1000));
+}
+
+async function removeTempRoot() {
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      rmSync(tmpRoot, { recursive: true, force: true });
+      return true;
+    } catch (err) {
+      if (attempt === 5) {
+        console.error(`[smoke] Failed to remove temporary workspace: ${err.message}`);
+        return false;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+  return false;
+}
+
+async function cleanup() {
+  if (cleanupPromise) return cleanupPromise;
+  cleanupPromise = (async () => {
+    const sidecarStopped = await stopSidecar();
+    const tempRootRemoved = await removeTempRoot();
+    return sidecarStopped && tempRootRemoved;
+  })();
+  return cleanupPromise;
+}
+
+async function handleFatalError(reason) {
+  console.error("[smoke] Fatal error:", reason);
+  await cleanup();
+  process.exit(1);
+}
+
+process.on("uncaughtException", handleFatalError);
+process.on("unhandledRejection", handleFatalError);
+process.on("SIGINT", async () => {
+  await cleanup();
   process.exit(1);
 });
-process.on("SIGTERM", () => {
-  cleanup();
+process.on("SIGTERM", async () => {
+  await cleanup();
   process.exit(1);
 });
 
@@ -171,7 +214,7 @@ if (!ready) {
   console.error("[smoke] FAIL: Sidecar did not become ready within timeout");
   console.error("[smoke] stderr:", sidecarStderr.slice(0, 2000));
   console.error("[smoke] stdout:", sidecarStdout.slice(0, 1000));
-  cleanup();
+  await cleanup();
   process.exit(1);
 }
 
@@ -237,14 +280,79 @@ try {
   console.error("[smoke] FAIL: GET /v0/management/usage-queue threw:", err.message);
 }
 
-// ── Test 4: Process is still alive after API calls ──────────────────────────
+// ── Test 4: Stable management contracts used by ProxyPal ───────────────────
+async function checkManagementContract({ expectedStatus = 200, method = "GET", path, validate }) {
+  try {
+    const resp = await fetchUrl(`${BASE_URL}/v0/management/${path}`, {
+      method,
+      headers: { "X-Management-Key": managementKey },
+    });
+    const body = JSON.parse(resp.body);
+    if (resp.status !== expectedStatus) {
+      console.error(
+        `[smoke] FAIL: ${method} /v0/management/${path} returned ${resp.status} (expected ${expectedStatus})`,
+      );
+      console.error("[smoke] Body:", resp.body.slice(0, 500));
+      return false;
+    }
+    if (!validate(body)) {
+      console.error(`[smoke] FAIL: ${method} /v0/management/${path} returned an unexpected body`);
+      console.error("[smoke] Body:", resp.body.slice(0, 500));
+      return false;
+    }
+    console.log(`[smoke] PASS: ${method} /v0/management/${path} -> ${expectedStatus}`);
+    return true;
+  } catch (err) {
+    console.error(`[smoke] FAIL: ${method} /v0/management/${path} threw:`, err.message);
+  }
+  return false;
+}
+
+const managementContracts = [
+  {
+    path: "max-retry-interval",
+    validate: (body) => body["max-retry-interval"] === 60,
+  },
+  { path: "ws-auth", validate: (body) => body["ws-auth"] === true },
+  { path: "request-log", validate: (body) => body["request-log"] === true },
+  {
+    path: "logs-max-total-size-mb",
+    validate: (body) => body["logs-max-total-size-mb"] === 1,
+  },
+  {
+    path: "error-logs-max-files",
+    validate: (body) => Number.isInteger(body["error-logs-max-files"]),
+  },
+  { path: "logs?lines=5", validate: (body) => Array.isArray(body.lines) },
+  { method: "DELETE", path: "logs", validate: (body) => body.success === true },
+  { path: "auth-files?all=true", validate: (body) => Array.isArray(body.files) },
+  {
+    expectedStatus: 400,
+    path: "oauth-callback",
+    validate: (body) => body.status === "error" && typeof body.error === "string",
+  },
+  {
+    expectedStatus: 400,
+    method: "PATCH",
+    path: "auth-files/status",
+    validate: (body) => typeof body.error === "string",
+  },
+];
+
+const managementContractResults = [];
+for (const contract of managementContracts) {
+  managementContractResults.push(await checkManagementContract(contract));
+}
+const managementContractsOk = managementContractResults.every(Boolean);
+
+// ── Test 5: Process is still alive after API calls ──────────────────────────
 const alive = sidecar.exitCode === null;
 if (alive) {
   console.log("[smoke] PASS: Sidecar process is still running after API calls");
 }
 
 // ── Summary ─────────────────────────────────────────────────────────────────
-const allPassed = test1Ok && test2Ok && test3Ok && alive;
+const allPassed = test1Ok && test2Ok && test3Ok && managementContractsOk && alive;
 
 if (allPassed) {
   console.log("\n[smoke] All sidecar smoke tests PASSED");
@@ -253,12 +361,16 @@ if (allPassed) {
   console.error(`  Authenticated config endpoint:  ${test1Ok ? "PASS" : "FAIL"}`);
   console.error(`  Unauthenticated rejected:       ${test2Ok ? "PASS" : "FAIL"}`);
   console.error(`  Usage queue is available:       ${test3Ok ? "PASS" : "FAIL"}`);
+  console.error(`  Management API contracts:       ${managementContractsOk ? "PASS" : "FAIL"}`);
   console.error(`  Process alive after tests:      ${alive ? "PASS" : "FAIL"}`);
   console.error("[smoke] stderr:", sidecarStderr.slice(0, 2000));
 }
 
-cleanup();
+const cleanupOk = await cleanup();
+if (!cleanupOk) {
+  console.error("[smoke] Cleanup did not complete successfully");
+}
 
-if (!allPassed) {
-  process.exit(1);
+if (!allPassed || !cleanupOk) {
+  process.exitCode = 1;
 }

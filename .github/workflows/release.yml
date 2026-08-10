@@ -5,18 +5,92 @@ on:
     tags:
       - "v*"
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   CARGO_TERM_COLOR: always
   CLIPROXYAPI_CHANNEL: mainline
-  CLIPROXYAPI_VERSION: "7.2.95"
+  CLIPROXYAPI_VERSION: "7.2.125"
 
 jobs:
+  preflight:
+    name: Verify pins and prepare release draft
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      release_id: ${{ steps.release.outputs.release_id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify app version and exact sidecar release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Release tag must be a canonical semantic version like v0.4.49: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          APP_VERSION=$(node -p "require('./package.json').version")
+          TAURI_VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          if [ "$APP_VERSION" != "$TAURI_VERSION" ] || [ "v$APP_VERSION" != "$RELEASE_TAG" ]; then
+            echo "Release tag $RELEASE_TAG does not match app versions package=$APP_VERSION tauri=$TAURI_VERSION" >&2
+            exit 1
+          fi
+          SIDECAR_REPO="router-for-me/CLIProxyAPI"
+          if [ "$CLIPROXYAPI_CHANNEL" = "plus" ]; then
+            SIDECAR_REPO="router-for-me/CLIProxyAPIPlus"
+          fi
+          SIDECAR_TAG="v${CLIPROXYAPI_VERSION}"
+          SIDECAR_VERSION=$(gh release view "$SIDECAR_TAG" --repo "$SIDECAR_REPO" --json tagName --jq '.tagName')
+          if [ "$SIDECAR_VERSION" != "$SIDECAR_TAG" ]; then
+            echo "Expected bundled sidecar $SIDECAR_TAG, got $SIDECAR_VERSION" >&2
+            exit 1
+          fi
+          echo "Verified ProxyPal@$RELEASE_TAG with $SIDECAR_REPO@$SIDECAR_TAG before publishing."
+
+      - name: Create or reuse one draft release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          RELEASE_MATCHES=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            | jq -s -c --arg tag "$RELEASE_TAG" '[.[][] | select(.tag_name == $tag)]')
+          MATCH_COUNT=$(echo "$RELEASE_MATCHES" | jq 'length')
+          if [ "$MATCH_COUNT" -gt 1 ]; then
+            echo "Multiple releases already exist for $RELEASE_TAG; refusing to choose one." >&2
+            exit 1
+          elif [ "$MATCH_COUNT" -eq 1 ]; then
+            RELEASE_JSON=$(echo "$RELEASE_MATCHES" | jq -c '.[0]')
+            RELEASE_ID=$(echo "$RELEASE_JSON" | jq -r '.id')
+            if [ "$(echo "$RELEASE_JSON" | jq -r '.draft')" != "true" ] || [ "$(echo "$RELEASE_JSON" | jq -r '.prerelease')" = "true" ]; then
+              echo "Release $RELEASE_TAG is not a reusable stable draft; refusing to reuse it." >&2
+              exit 1
+            fi
+          else
+            RELEASE_ID=$(gh api --method POST "repos/$GITHUB_REPOSITORY/releases" \
+              -f "tag_name=$RELEASE_TAG" \
+              -f "name=ProxyPal $RELEASE_TAG" \
+              -F draft=true \
+              -F prerelease=false \
+              --jq '.id')
+          fi
+          echo "release_id=$RELEASE_ID" >> "$GITHUB_OUTPUT"
+
   release:
     name: Release (${{ matrix.os }})
+    needs: preflight
     permissions:
       contents: write
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         include:
           - os: macos-latest
@@ -129,6 +203,7 @@ jobs:
           ANTIGRAVITY_CLIENT_ID: ${{ secrets.ANTIGRAVITY_CLIENT_ID }}
           ANTIGRAVITY_CLIENT_SECRET: ${{ secrets.ANTIGRAVITY_CLIENT_SECRET }}
         with:
+          releaseId: ${{ needs.preflight.outputs.release_id }}
           tagName: ${{ github.ref_name }}
           releaseName: "ProxyPal ${{ github.ref_name }}"
           releaseBody: |
@@ -146,7 +221,7 @@ jobs:
             | Windows (Portable) | `.zip` (no install required) |
             | Linux | `.deb` package |
             | Linux (Fedora/RHEL) | `.rpm` package |
-          releaseDraft: false
+          releaseDraft: true
           prerelease: false
           updaterJsonPreferNsis: true
           args: --target ${{ matrix.target }}
@@ -156,25 +231,45 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ needs.preflight.outputs.release_id }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          $version = "${{ github.ref_name }}"
+          $version = $env:RELEASE_TAG
           $exePath = "src-tauri/target/x86_64-pc-windows-msvc/release/ProxyPal.exe"
 
           if (Test-Path $exePath) {
             $zipName = "ProxyPal_${version}_x64_portable.zip"
             Compress-Archive -Path $exePath -DestinationPath $zipName
-            gh release upload $version $zipName --clobber
+
+            $assetPages = gh api --paginate --slurp "repos/$env:GITHUB_REPOSITORY/releases/$env:RELEASE_ID/assets?per_page=100" | ConvertFrom-Json
+            $assets = @($assetPages | ForEach-Object { $_ | ForEach-Object { $_ } })
+            $existing = $assets | Where-Object { $_.name -eq $zipName } | Select-Object -First 1
+            if ($null -ne $existing) {
+              gh api --method DELETE "repos/$env:GITHUB_REPOSITORY/releases/assets/$($existing.id)"
+            }
+
+            $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/$env:RELEASE_ID" | ConvertFrom-Json
+            $uploadUrl = $release.upload_url -replace '\{\?name,label\}$', ''
+            $encodedName = [Uri]::EscapeDataString($zipName)
+            $headers = @{
+              Authorization = "Bearer $env:GH_TOKEN"
+              Accept = "application/vnd.github+json"
+              "X-GitHub-Api-Version" = "2022-11-28"
+            }
+            Invoke-RestMethod -Uri "$uploadUrl`?name=$encodedName" -Method Post -Headers $headers -ContentType "application/zip" -InFile $zipName
             Write-Host "Uploaded portable zip: $zipName"
           } else {
-            Write-Warning "Executable not found at $exePath"
             Get-ChildItem -Recurse -Filter "*.exe" src-tauri/target | Select-Object FullName
+            throw "Executable not found at $exePath"
           }
 
   generate-changelog:
     name: Generate Changelog
-    needs: release
+    needs: [preflight, release]
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
-    if: always() && !cancelled()
+    if: needs.release.result == 'success'
     outputs:
       changelog: ${{ steps.changelog.outputs.changelog }}
       sidecar_version: ${{ steps.changelog.outputs.sidecar_version }}
@@ -187,12 +282,13 @@ jobs:
         id: changelog
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -e
 
           # Get previous tag
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          CURRENT_TAG="${{ github.ref_name }}"
+          CURRENT_TAG="$RELEASE_TAG"
 
           echo "Previous tag: $PREV_TAG"
           echo "Current tag: $CURRENT_TAG"
@@ -206,22 +302,22 @@ jobs:
             fi
           fi
 
-          # Get CLIProxyAPI latest release info for the selected sidecar channel
+          # Get release info for the exact CLIProxyAPI version bundled above
           SIDECAR_REPO="router-for-me/CLIProxyAPI"
           if [ "$CLIPROXYAPI_CHANNEL" = "plus" ]; then
             SIDECAR_REPO="router-for-me/CLIProxyAPIPlus"
           fi
-          SIDECAR_RELEASE=$(gh release view --repo "$SIDECAR_REPO" --json tagName,body 2>/dev/null || echo "{}")
+          SIDECAR_TAG="v${CLIPROXYAPI_VERSION}"
+          SIDECAR_RELEASE=$(gh release view "v${CLIPROXYAPI_VERSION}" --repo "$SIDECAR_REPO" --json tagName,body)
           SIDECAR_VERSION=$(echo "$SIDECAR_RELEASE" | jq -r '.tagName // "unknown"')
           SIDECAR_BODY=$(echo "$SIDECAR_RELEASE" | jq -r '.body // ""')
 
           echo "sidecar_version=$SIDECAR_VERSION" >> $GITHUB_OUTPUT
 
-          # Extract key fixes/features from the selected CLIProxyAPI changelog (filter out merge commits)
+          # Extract the first ten release-note bullets without duplicating their prefixes.
           SIDECAR_HIGHLIGHTS=""
           if [ -n "$SIDECAR_BODY" ]; then
-            # Extract lines with fix/feat/Fixed and format them
-            SIDECAR_HIGHLIGHTS=$(echo "$SIDECAR_BODY" | grep -E '(fix|feat|Fixed|refactor)\(' | head -10 | sed 's/^- \[.*\] /- /' | sed 's/^/- /' || echo "")
+            SIDECAR_HIGHLIGHTS=$(echo "$SIDECAR_BODY" | grep -E '^- ' | head -10 | sed -E 's/^- +/- /' || echo "")
           fi
 
           # Build full changelog
@@ -253,6 +349,8 @@ jobs:
       - name: Update release body with changelog
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ needs.preflight.outputs.release_id }}
+          RELEASE_TAG: ${{ github.ref_name }}
           CHANGELOG: ${{ steps.changelog.outputs.changelog }}
           SIDECAR_VERSION: ${{ steps.changelog.outputs.sidecar_version }}
         run: |
@@ -284,44 +382,82 @@ jobs:
           cat /tmp/release_body.md
           echo "===================="
 
-          # Update release with new body
-          gh release edit "${{ github.ref_name }}" --notes-file /tmp/release_body.md || true
+          # Update the fixed draft release by ID before publication.
+          jq -n --rawfile body /tmp/release_body.md '{body: $body}' \
+            | gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --input -
+
+          # Keep updater-visible notes aligned with the generated changelog.
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets?per_page=100" --paginate --slurp \
+            | jq 'add' > /tmp/release_assets.json
+          LATEST_ASSET_ID=$(jq -r '.[] | select(.name == "latest.json") | .id' /tmp/release_assets.json | head -1)
+          if [ -z "$LATEST_ASSET_ID" ]; then
+            echo "latest.json was not generated by tauri-action; refusing to publish generic updater notes." >&2
+            exit 1
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/releases/assets/$LATEST_ASSET_ID" \
+            -H 'Accept: application/octet-stream' > /tmp/latest.json
+          jq --arg notes "$DECODED_CHANGELOG" '.notes = $notes' /tmp/latest.json > /tmp/latest-patched.json
+          gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$LATEST_ASSET_ID"
+          UPLOAD_URL=$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq '.upload_url' | sed 's/{?name,label}//')
+          curl --fail-with-body --silent --show-error \
+            -X POST "$UPLOAD_URL?name=latest.json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            -H 'Content-Type: application/json' \
+            --data-binary @/tmp/latest-patched.json
+
+  publish:
+    name: Publish Release
+    needs: [preflight, release, generate-changelog]
+    if: needs.release.result == 'success' && needs.generate-changelog.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish verified release draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ needs.preflight.outputs.release_id }}
+        run: gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" -F draft=false
 
   notify:
     name: Discord Notification
-    needs: [release, generate-changelog]
+    needs: [preflight, release, generate-changelog, publish]
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: Discord notification (release)
-        if: ${{ needs.release.result == 'success' }}
+        if: ${{ needs.preflight.result == 'success' && needs.release.result == 'success' && needs.generate-changelog.result == 'success' && needs.publish.result == 'success' }}
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           # Fetch the release body (which now contains the changelog)
-          RELEASE_BODY=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ github.ref_name }}" \
+          RELEASE_BODY=$(curl --fail-with-body --silent --show-error -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" \
             | jq -r '.body // "New version available"')
 
           # Truncate if too long for Discord (max 4096 chars for embed description)
           if [ ${#RELEASE_BODY} -gt 3800 ]; then
-            RELEASE_BODY="${RELEASE_BODY:0:3800}...\n\n[See full changelog](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }})"
+            RELEASE_BODY="${RELEASE_BODY:0:3800}...\n\n[See full changelog]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$RELEASE_TAG)"
           fi
 
           # Escape for JSON
           RELEASE_BODY=$(echo "$RELEASE_BODY" | jq -Rs .)
 
           # Send Discord notification with changelog
-          curl -H "Content-Type: application/json" \
-            -d "{\"embeds\": [{\"title\": \"🚀 ProxyPal ${{ github.ref_name }} Released!\", \"description\": $RELEASE_BODY, \"color\": 5793266, \"url\": \"${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}\"}]}" \
+          curl --fail-with-body --silent --show-error -H "Content-Type: application/json" \
+            -d "{\"embeds\": [{\"title\": \"🚀 ProxyPal $RELEASE_TAG Released!\", \"description\": $RELEASE_BODY, \"color\": 5793266, \"url\": \"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$RELEASE_TAG\"}]}" \
             $DISCORD_WEBHOOK
 
       - name: Discord notification (failure)
-        if: ${{ needs.release.result == 'failure' }}
+        if: ${{ needs.preflight.result != 'success' || needs.release.result != 'success' || needs.generate-changelog.result != 'success' || needs.publish.result != 'success' }}
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          curl -H "Content-Type: application/json" \
-            -d "{\"embeds\": [{\"title\": \"❌ ProxyPal Release Failed\", \"description\": \"**Tag:** \`${{ github.ref_name }}\`\n\n[View Logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\", \"color\": 15158332}]}" \
+          curl --fail-with-body --silent --show-error -H "Content-Type: application/json" \
+            -d "{\"embeds\": [{\"title\": \"❌ ProxyPal Release Failed\", \"description\": \"**Tag:** \`$RELEASE_TAG\`\n\n[View Logs]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)\", \"color\": 15158332}]}" \
             $DISCORD_WEBHOOK

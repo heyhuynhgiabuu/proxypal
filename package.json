@@ -1,6 +1,6 @@
 {
   "name": "proxypal",
-  "version": "0.4.48",
+  "version": "0.4.49",
   "description": "",
   "license": "MIT",
   "type": "module",
@@ -11,6 +11,7 @@
     "serve": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
+    "test:sidecar": "node --test scripts/update-sidecar.test.mjs",
     "test:watch": "vitest",
     "lint": "oxlint -c oxlint.config.mjs .",
     "lint:fix": "oxlint -c oxlint.config.mjs --fix .",
@@ -23,7 +24,6 @@
   },
   "dependencies": {
     "@kobalte/core": "^0.13.11",
-    "@kobalte/tailwindcss": "^0.9.0",
     "@solid-primitives/i18n": "^2.2.1",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-dialog": "^2.6.0",
@@ -35,14 +35,12 @@
     "@tauri-apps/plugin-updater": "^2.10.0",
     "chart.js": "^4.5.1",
     "echarts": "^6.0.0",
-    "solid-echarts": "^0.0.4",
     "solid-js": "^1.9.11"
   },
   "devDependencies": {
+    "@kobalte/tailwindcss": "^0.9.0",
     "@nkzw/eslint-plugin": "^2.0.0",
     "@nkzw/oxlint-config": "^1.0.1",
-    "@solidjs/router": "^0.15.4",
-    "@solidjs/testing-library": "^0.8.10",
     "@tauri-apps/cli": "^2.10.0",
     "@testing-library/jest-dom": "^6.9.1",
     "autoprefixer": "^10.4.24",

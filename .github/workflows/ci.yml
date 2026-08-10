@@ -19,7 +19,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   CLIPROXYAPI_CHANNEL: ${{ github.event.inputs.sidecar_channel || 'mainline' }}
-  CLIPROXYAPI_VERSION: "7.2.95"
+  CLIPROXYAPI_VERSION: "7.2.125"
 
 jobs:
   check:
@@ -52,6 +52,9 @@ jobs:
 
       - name: Frontend checks (ts + lint + format)
         run: pnpm check:parallel
+
+      - name: Sidecar updater tests
+        run: pnpm test:sidecar
 
       - name: Rust check
         run: cargo check
@@ -202,15 +205,15 @@ jobs:
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
-          curl -H "Content-Type: application/json" \
+          curl --fail-with-body --silent --show-error -H "Content-Type: application/json" \
             -d "{\"embeds\": [{\"title\": \"ProxyPal Build Passed\", \"description\": \"**Branch:** \`${{ github.ref_name }}\`\n**Commit:** [\`${GITHUB_SHA::7}\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})\n**Author:** ${{ github.actor }}\n\n:package: Artifacts ready for download\", \"color\": 3066993}]}" \
             $DISCORD_WEBHOOK
 
       - name: Discord notification (failure)
-        if: ${{ needs.check.result == 'failure' || needs.build.result == 'failure' }}
+        if: ${{ needs.check.result != 'success' || needs.build.result != 'success' }}
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
-          curl -H "Content-Type: application/json" \
+          curl --fail-with-body --silent --show-error -H "Content-Type: application/json" \
             -d "{\"embeds\": [{\"title\": \"ProxyPal Build Failed\", \"description\": \"**Branch:** \`${{ github.ref_name }}\`\n**Commit:** [\`${GITHUB_SHA::7}\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})\n**Author:** ${{ github.actor }}\n\n[View Logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\", \"color\": 15158332}]}" \
             $DISCORD_WEBHOOK

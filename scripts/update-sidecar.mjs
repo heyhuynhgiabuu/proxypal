@@ -34,9 +34,12 @@ function readPinnedSidecarVersion() {
 
 async function resolveRelease(channelConfig, headers) {
   const pinnedVersion = readPinnedSidecarVersion();
-  const apiUrl = pinnedVersion
-    ? `https://api.github.com/repos/${channelConfig.repo}/releases/tags/v${pinnedVersion}`
-    : `https://api.github.com/repos/${channelConfig.repo}/releases/latest`;
+  if (!pinnedVersion) {
+    throw new Error(
+      "No pinned CLIProxyAPI version found. Set CLIPROXYAPI_VERSION or restore scripts/sidecar-version.",
+    );
+  }
+  const apiUrl = `https://api.github.com/repos/${channelConfig.repo}/releases/tags/v${pinnedVersion}`;
 
   const apiRes = await fetch(apiUrl, { headers });
   if (!apiRes.ok) {

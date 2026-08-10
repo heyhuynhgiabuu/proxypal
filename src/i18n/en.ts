@@ -691,6 +691,7 @@ export const en = {
         label: "Routing Strategy",
         roundRobin: "Round Robin (even distribution)",
         sequential: "Sequential (ordered)",
+        weightedRoundRobin: "Weighted Round Robin (respect account weights)",
       },
     },
     oauthExcluded: {
@@ -918,5 +919,3 @@ export const en = {
     updating: "Updating...",
   },
 } as const;
-
-export type Dictionary = typeof en;
