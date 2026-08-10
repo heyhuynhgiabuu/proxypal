@@ -199,6 +199,7 @@ jobs:
     needs: [check, build]
     runs-on: ubuntu-latest
     if: always()
+    continue-on-error: true
     steps:
       - name: Discord notification (success)
         if: ${{ needs.check.result == 'success' && needs.build.result == 'success' }}

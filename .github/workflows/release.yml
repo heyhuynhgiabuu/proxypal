@@ -426,6 +426,7 @@ jobs:
     needs: [preflight, release, generate-changelog, publish]
     runs-on: ubuntu-latest
     if: always()
+    continue-on-error: true
     steps:
       - name: Discord notification (release)
         if: ${{ needs.preflight.result == 'success' && needs.release.result == 'success' && needs.generate-changelog.result == 'success' && needs.publish.result == 'success' }}
