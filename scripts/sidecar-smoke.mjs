@@ -125,21 +125,21 @@ async function terminateSidecar(signal, timeoutMs) {
 
 async function stopSidecar() {
   if (sidecar.exitCode !== null) return true;
-  const terminated = await terminateSidecar("SIGTERM", 2000);
-  return terminated || (await terminateSidecar("SIGKILL", 1000));
+  const terminated = await terminateSidecar("SIGTERM", 5000);
+  return terminated || (await terminateSidecar("SIGKILL", 5000));
 }
 
 async function removeTempRoot() {
-  for (let attempt = 1; attempt <= 5; attempt++) {
+  for (let attempt = 1; attempt <= 40; attempt++) {
     try {
       rmSync(tmpRoot, { recursive: true, force: true });
       return true;
     } catch (err) {
-      if (attempt === 5) {
+      if (attempt === 40) {
         console.error(`[smoke] Failed to remove temporary workspace: ${err.message}`);
         return false;
       }
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 250));
     }
   }
   return false;
