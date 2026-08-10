@@ -10,7 +10,6 @@
 // A temporary directory is created and cleaned up on exit.
 
 import { spawn } from "node:child_process";
-import { once } from "node:events";
 import { existsSync, mkdirSync, writeFileSync, rmSync, chmodSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
@@ -104,27 +103,38 @@ sidecar.stderr.on("data", (chunk) => {
 
 let cleanupPromise = null;
 
-async function waitForSidecarExit(timeoutMs) {
-  if (sidecar.exitCode !== null) return;
-  await Promise.race([
-    once(sidecar, "exit"),
-    new Promise((resolve) => setTimeout(resolve, timeoutMs)),
-  ]);
+function sidecarExited() {
+  return sidecar.exitCode !== null || sidecar.signalCode !== null;
+}
+
+function waitForSidecarExit(timeoutMs) {
+  if (sidecarExited()) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const onExit = (exitCode, signalCode) => {
+      clearTimeout(timer);
+      resolve(exitCode !== null || signalCode !== null);
+    };
+    const timer = setTimeout(() => {
+      sidecar.off("exit", onExit);
+      resolve(false);
+    }, timeoutMs);
+    sidecar.once("exit", onExit);
+  });
 }
 
 async function terminateSidecar(signal, timeoutMs) {
   try {
     sidecar.kill(signal);
     await waitForSidecarExit(timeoutMs);
-    return sidecar.exitCode !== null;
+    return sidecarExited();
   } catch {
     // Process may already be dead.
-    return sidecar.exitCode !== null;
+    return sidecarExited();
   }
 }
 
 async function stopSidecar() {
-  if (sidecar.exitCode !== null) return true;
+  if (sidecarExited()) return true;
   const terminated = await terminateSidecar("SIGTERM", 5000);
   return terminated || (await terminateSidecar("SIGKILL", 5000));
 }
