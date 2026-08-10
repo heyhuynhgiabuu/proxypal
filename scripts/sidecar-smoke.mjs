@@ -356,7 +356,7 @@ for (const contract of managementContracts) {
 const managementContractsOk = managementContractResults.every(Boolean);
 
 // ── Test 5: Process is still alive after API calls ──────────────────────────
-const alive = sidecar.exitCode === null;
+const alive = !sidecarExited();
 if (alive) {
   console.log("[smoke] PASS: Sidecar process is still running after API calls");
 }
