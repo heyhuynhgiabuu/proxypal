@@ -199,7 +199,6 @@ jobs:
     needs: [check, build]
     runs-on: ubuntu-latest
     if: always()
-    continue-on-error: true
     steps:
       - name: Discord notification (success)
         if: ${{ needs.check.result == 'success' && needs.build.result == 'success' }}
@@ -208,7 +207,7 @@ jobs:
         run: |
           curl --fail-with-body --silent --show-error -H "Content-Type: application/json" \
             -d "{\"embeds\": [{\"title\": \"ProxyPal Build Passed\", \"description\": \"**Branch:** \`${{ github.ref_name }}\`\n**Commit:** [\`${GITHUB_SHA::7}\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})\n**Author:** ${{ github.actor }}\n\n:package: Artifacts ready for download\", \"color\": 3066993}]}" \
-            $DISCORD_WEBHOOK
+            $DISCORD_WEBHOOK || echo "::warning::Discord success notification failed; continuing without notification."
 
       - name: Discord notification (failure)
         if: ${{ needs.check.result != 'success' || needs.build.result != 'success' }}
@@ -217,4 +216,4 @@ jobs:
         run: |
           curl --fail-with-body --silent --show-error -H "Content-Type: application/json" \
             -d "{\"embeds\": [{\"title\": \"ProxyPal Build Failed\", \"description\": \"**Branch:** \`${{ github.ref_name }}\`\n**Commit:** [\`${GITHUB_SHA::7}\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})\n**Author:** ${{ github.actor }}\n\n[View Logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\", \"color\": 15158332}]}" \
-            $DISCORD_WEBHOOK
+            $DISCORD_WEBHOOK || echo "::warning::Discord failure notification failed; continuing without notification."

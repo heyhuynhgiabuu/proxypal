@@ -426,7 +426,6 @@ jobs:
     needs: [preflight, release, generate-changelog, publish]
     runs-on: ubuntu-latest
     if: always()
-    continue-on-error: true
     steps:
       - name: Discord notification (release)
         if: ${{ needs.preflight.result == 'success' && needs.release.result == 'success' && needs.generate-changelog.result == 'success' && needs.publish.result == 'success' }}
@@ -451,7 +450,7 @@ jobs:
           # Send Discord notification with changelog
           curl --fail-with-body --silent --show-error -H "Content-Type: application/json" \
             -d "{\"embeds\": [{\"title\": \"🚀 ProxyPal $RELEASE_TAG Released!\", \"description\": $RELEASE_BODY, \"color\": 5793266, \"url\": \"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$RELEASE_TAG\"}]}" \
-            $DISCORD_WEBHOOK
+            $DISCORD_WEBHOOK || echo "::warning::Discord release notification failed; continuing without notification."
 
       - name: Discord notification (failure)
         if: ${{ needs.preflight.result != 'success' || needs.release.result != 'success' || needs.generate-changelog.result != 'success' || needs.publish.result != 'success' }}
@@ -461,4 +460,4 @@ jobs:
         run: |
           curl --fail-with-body --silent --show-error -H "Content-Type: application/json" \
             -d "{\"embeds\": [{\"title\": \"❌ ProxyPal Release Failed\", \"description\": \"**Tag:** \`$RELEASE_TAG\`\n\n[View Logs]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)\", \"color\": 15158332}]}" \
-            $DISCORD_WEBHOOK
+            $DISCORD_WEBHOOK || echo "::warning::Discord failure notification failed; continuing without notification."
