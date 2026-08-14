@@ -59,6 +59,32 @@ export async function getAvailableModels(): Promise<AvailableModel[]> {
   return invoke("get_available_models");
 }
 
+// Static model definitions from the CLIProxyAPI registry
+// (GET /v0/management/model-definitions/:channel)
+export interface ModelDefinition {
+  contextLength?: number;
+  displayName?: string;
+  id: string;
+  maxCompletionTokens?: number;
+  name?: string;
+  object?: string;
+  ownedBy?: string;
+  supportedInputModalities?: string[];
+  supportedOutputModalities?: string[];
+  supportsWebSearch?: boolean;
+  thinking?: {
+    levels?: string[];
+    max?: number;
+    min?: number;
+    zeroAllowed?: boolean;
+  };
+  type?: string;
+}
+
+export async function getModelDefinitions(channel: string): Promise<ModelDefinition[]> {
+  return invoke("get_model_definitions", { channel });
+}
+
 export async function fetchOpenaiCompatibleModels(): Promise<OpenAICompatibleProviderModels[]> {
   return invoke("fetch_openai_compatible_models");
 }

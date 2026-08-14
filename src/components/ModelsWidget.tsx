@@ -1,6 +1,8 @@
-import { type Component, createMemo, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show, type Component } from "solid-js";
+import { getModelDefinitions } from "../lib/tauri";
 import { ModelsList } from "./ModelsList";
 
+import type { ModelDefinition } from "../lib/tauri";
 import type { ModelInfo } from "./ModelCard";
 
 interface ModelsWidgetProps {
@@ -47,6 +49,26 @@ const getProviderColor = (ownedBy: string): string => {
   return colors[ownedBy] || "bg-gray-500";
 };
 
+// Map widget provider groups to CLIProxyAPI registry channels
+const CHANNELS_BY_PROVIDER: Record<string, string[]> = {
+  anthropic: ["claude"],
+  antigravity: ["antigravity"],
+  google: ["gemini", "vertex", "aistudio"],
+  kimi: ["kimi"],
+  openai: ["codex"],
+  xai: ["xai"],
+};
+
+const formatContext = (n: number): string => {
+  if (n >= 1_000_000) {
+    return `${Math.round(n / 1_000_000)}M`;
+  }
+  if (n >= 1000) {
+    return `${Math.round(n / 1000)}K`;
+  }
+  return String(n);
+};
+
 // Derive provider to fix aliasing issues (e.g., antigravity models aliased to Gemini IDs)
 const deriveProvider = (model: ModelInfo): string => {
   const id = model.id.toLowerCase();
@@ -72,6 +94,59 @@ const deriveProvider = (model: ModelInfo): string => {
 export const ModelsWidget: Component<ModelsWidgetProps> = (props) => {
   const [expanded, setExpanded] = createSignal(false);
   const [selectedProvider, setSelectedProvider] = createSignal<string | null>(null);
+  const [definitions, setDefinitions] = createSignal<Map<string, ModelDefinition>>(new Map());
+
+  // Fetch static registry definitions once models are available
+  createEffect(() => {
+    if (props.models.length === 0) {
+      return;
+    }
+    const channels = new Set<string>();
+    for (const model of props.models) {
+      for (const ch of CHANNELS_BY_PROVIDER[deriveProvider(model)] ?? []) {
+        channels.add(ch);
+      }
+    }
+    void (async () => {
+      try {
+        const map = new Map<string, ModelDefinition>();
+        await Promise.all(
+          [...channels].map(async (ch) => {
+            try {
+              const defs = await getModelDefinitions(ch);
+              for (const d of defs) {
+                map.set(d.id, d);
+              }
+            } catch {
+              // Channel unavailable or proxy stopped — keep existing data
+            }
+          }),
+        );
+        setDefinitions(map);
+      } catch {
+        // Ignore registry fetch failures — heuristics still apply
+      }
+    })();
+  });
+
+  // Enrich a model with registry metadata when a definition matches by id
+  const enrichModel = (model: ModelInfo): ModelInfo => {
+    const def = definitions().get(model.id);
+    if (!def) {
+      return model;
+    }
+    const modalities = [
+      ...(def.supportedInputModalities ?? []),
+      ...(def.supportedOutputModalities ?? []),
+    ].filter((m) => m !== "text");
+    return {
+      ...model,
+      contextWindow: def.contextLength ? formatContext(def.contextLength) : model.contextWindow,
+      displayName: def.displayName || model.displayName,
+      modalities: modalities.length ? [...new Set(modalities)] : undefined,
+      supportsThinking: def.thinking ? true : model.supportsThinking,
+    };
+  };
 
   // Group models by provider (with frontend override)
   const providerGroups = createMemo<ProviderGroup[]>(() => {
@@ -82,7 +157,7 @@ export const ModelsWidget: Component<ModelsWidgetProps> = (props) => {
       if (!groups[provider]) {
         groups[provider] = [];
       }
-      groups[provider].push(model);
+      groups[provider].push(enrichModel(model));
     }
 
     return Object.entries(groups)

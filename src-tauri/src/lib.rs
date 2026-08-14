@@ -427,6 +427,7 @@ pub fn run() {
             commands::usage::export_usage_stats,
             commands::usage::import_usage_stats,
             commands::models::get_available_models,
+            commands::models::get_model_definitions,
             commands::models::test_openai_provider,
             commands::models::test_provider_connection,
             commands::models::fetch_openai_compatible_models,

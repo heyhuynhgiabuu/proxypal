@@ -1,5 +1,5 @@
 use crate::state::AppState;
-use crate::types::{AvailableModel, ProviderTestResult};
+use crate::types::{AvailableModel, ModelDefinition, ProviderTestResult};
 use serde::Deserialize;
 use tauri::State;
 
@@ -695,9 +695,51 @@ pub async fn set_claude_code_model(model_type: String, model_name: String) -> Re
     Ok(())
 }
 
+/// Fetch static model definitions (display names, context length, modalities,
+/// thinking support) for a channel from the CLIProxyAPI registry.
+/// Channels: claude, gemini, vertex, aistudio, codex, kimi, antigravity, xai.
+/// Returns an empty list when the proxy is not running.
+#[tauri::command]
+pub async fn get_model_definitions(
+    state: State<'_, AppState>,
+    channel: String,
+) -> Result<Vec<ModelDefinition>, String> {
+    let config = state.config.lock().unwrap().clone();
+    let proxy_running = state.proxy_status.lock().unwrap().running;
+    if !proxy_running {
+        return Ok(vec![]);
+    }
+
+    let url = crate::get_management_url(config.port, &format!("model-definitions/{}", channel));
+    let response = crate::build_management_client()
+        .get(&url)
+        .header("X-Management-Key", crate::get_management_key())
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch model definitions: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "Model definitions API returned status {}",
+            response.status()
+        ));
+    }
+
+    let payload: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse model definitions response: {}", e))?;
+
+    let models = payload
+        .get("models")
+        .cloned()
+        .unwrap_or_else(|| serde_json::Value::Array(Vec::new()));
+    serde_json::from_value(models).map_err(|e| format!("Failed to parse model definitions: {}", e))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::get_model_limits;
+    use super::{get_model_limits, ModelDefinition};
 
     #[test]
     fn gpt_5_6_models_use_sidecar_limits() {
@@ -708,5 +750,72 @@ mod tests {
                 "unexpected limits for {model}"
             );
         }
+    }
+
+    #[test]
+    fn parses_model_definitions_payload() {
+        // Fixture captured from the live 7.2.131 sidecar registry (claude channel)
+        let json = r#"{"channel":"claude","models":[{"id":"claude-haiku-4-5-20251001","object":"model","created":1759276800,"owned_by":"anthropic","type":"claude","display_name":"Claude 4.5 Haiku","context_length":200000,"max_completion_tokens":64000,"supportedInputModalities":["text","image"],"supportedOutputModalities":["text"],"thinking":{"min":1024,"max":128000,"zero_allowed":true,"levels":["low","medium","high","max"]}}]}"#;
+        let payload: serde_json::Value = serde_json::from_str(json).unwrap();
+        let models: Vec<ModelDefinition> =
+            serde_json::from_value(payload.get("models").unwrap().clone()).unwrap();
+
+        assert_eq!(models.len(), 1);
+        let m = &models[0];
+        assert_eq!(m.id, "claude-haiku-4-5-20251001");
+        assert_eq!(m.display_name.as_deref(), Some("Claude 4.5 Haiku"));
+        assert_eq!(m.context_length, Some(200_000));
+        assert_eq!(m.supported_input_modalities, vec!["text", "image"]);
+        assert_eq!(m.supported_output_modalities, vec!["text"]);
+        let thinking = m.thinking.as_ref().unwrap();
+        assert_eq!(thinking.min, Some(1024));
+        assert!(thinking.zero_allowed);
+        assert_eq!(thinking.levels, vec!["low", "medium", "high", "max"]);
+    }
+
+    #[test]
+    fn missing_optional_definition_fields_default() {
+        let json = r#"{"models":[{"id":"grok-imagine-2","owned_by":"xai"}]}"#;
+        let payload: serde_json::Value = serde_json::from_str(json).unwrap();
+        let models: Vec<ModelDefinition> =
+            serde_json::from_value(payload.get("models").unwrap().clone()).unwrap();
+
+        let m = &models[0];
+        assert_eq!(m.display_name, None);
+        assert_eq!(m.context_length, None);
+        assert!(m.supported_input_modalities.is_empty());
+        assert!(m.thinking.is_none());
+        assert!(!m.supports_web_search);
+    }
+
+    #[test]
+    fn model_definitions_serialize_camel_case_for_frontend() {
+        // The sidecar speaks snake_case; Tauri commands must speak camelCase
+        // to match the TS ModelDefinition interface. Regression guard: the
+        // frontend enrichment reads displayName/contextLength/etc.
+        let json = r#"{"models":[{"id":"claude-haiku-4-5-20251001","owned_by":"anthropic","display_name":"Claude 4.5 Haiku","context_length":200000,"max_completion_tokens":64000,"supportedInputModalities":["text","image"],"supports_web_search":false,"thinking":{"min":1024,"max":128000,"zero_allowed":true,"levels":["low","high"]}}]}"#;
+        let payload: serde_json::Value = serde_json::from_str(json).unwrap();
+        let models: Vec<ModelDefinition> =
+            serde_json::from_value(payload.get("models").unwrap().clone()).unwrap();
+        let out = serde_json::to_value(&models[0]).unwrap();
+
+        assert_eq!(out["displayName"], "Claude 4.5 Haiku");
+        assert_eq!(out["contextLength"], 200_000);
+        assert_eq!(out["maxCompletionTokens"], 64_000);
+        assert_eq!(out["ownedBy"], "anthropic");
+        assert_eq!(
+            out["supportedInputModalities"],
+            serde_json::json!(["text", "image"])
+        );
+        assert_eq!(out["supportsWebSearch"], false);
+        assert_eq!(out["thinking"]["zeroAllowed"], true);
+        assert!(
+            out.get("display_name").is_none(),
+            "snake_case key leaked to frontend"
+        );
+        assert!(
+            out.get("context_length").is_none(),
+            "snake_case key leaked to frontend"
+        );
     }
 }

@@ -1,11 +1,11 @@
+import { For, type Component } from "solid-js";
 import { ProviderBadge } from "./ProviderBadge";
-
-import type { Component } from "solid-js";
 
 export interface ModelInfo {
   contextWindow?: string;
   displayName?: string;
   id: string;
+  modalities?: string[];
   ownedBy: string;
   source: string;
   supportsThinking?: boolean;
@@ -61,6 +61,7 @@ export const ModelCard: Component<ModelCardProps> = (props) => {
   const displayName = () => props.model.displayName || getDisplayName(props.model.id);
   const contextWindow = () => props.model.contextWindow || getContextWindow(props.model.id);
   const hasThinking = () => props.model.supportsThinking ?? supportsThinking(props.model.id);
+  const modalities = () => (props.model.modalities ?? []).filter((m) => m !== "text");
 
   if (compact()) {
     return (
@@ -95,6 +96,13 @@ export const ModelCard: Component<ModelCardProps> = (props) => {
             {contextWindow()} ctx
           </span>
         )}
+        <For each={modalities()}>
+          {(m) => (
+            <span class="inline-flex items-center rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+              {m}
+            </span>
+          )}
+        </For>
         {hasThinking() && (
           <span class="inline-flex items-center rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
             💭 Thinking
