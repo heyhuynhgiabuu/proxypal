@@ -1,6 +1,33 @@
-# ProxyPal v0.4.49
+# ProxyPal v0.4.50
 
 **Release status:** Pending publication
+
+## CLIProxyAPI v7.2.131
+
+- Updates the pinned mainline sidecar from v7.2.125 to v7.2.131 across local development, CI, and release builds.
+- Includes upstream fixes for premature SSE stream termination, DeepSeek key rotation on insufficient balance, and Codex session normalization, plus replay-index and connection-reuse performance work.
+- Adds support for per-credential `request-retry` overrides (API-key entries and OAuth/token files) and static model definitions with modality metadata.
+
+## Available Models registry
+
+- Available Models now enriches listings from the sidecar's static model registry: real display names, context windows, thinking support, and non-text modality badges (image/audio/video) instead of ID-string heuristics.
+- Adds `get_model_definitions` management command backed by fixture and round-trip tests; sidecar snake_case payloads deserialize with asymmetric renames and serialize camelCase to the frontend.
+
+## Per-credential retry and retry knobs
+
+- Adds an optional per-key Request Retry setting to all five API-key providers (Claude, Gemini, Codex, xAI, Vertex): 0 disables retries for that key, empty uses the global setting.
+- Adds Max Retry Credentials (maximum credentials tried per failed request; 0 = try all) and Disable Cooling (skip auth/model cooldown scheduling) to Proxy Settings.
+- New AppConfig fields are serde-defaulted so existing configs load unchanged.
+
+## Dependency refresh
+
+- Updates solid-js from 1.9.11 to 1.9.14 (patch-level fixes within v1).
+
+---
+
+# ProxyPal v0.4.49
+
+**Released:** 2026-08-10
 
 ## CLIProxyAPI v7.2.125
 
