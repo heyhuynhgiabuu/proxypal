@@ -345,6 +345,52 @@ export function ProxySettings(props: ProxySettingsProps) {
 
         <label class="block">
           <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+            {t("settings.network.maxRetryCredentials.label")}
+          </span>
+          <input
+            class="transition-smooth mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-900"
+            min="0"
+            onInput={(e) =>
+              local.handleConfigChange(
+                "maxRetryCredentials",
+                Math.max(0, Number.parseInt(e.currentTarget.value) || 0),
+              )
+            }
+            type="number"
+            value={local.config().maxRetryCredentials}
+          />
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            {t("settings.network.maxRetryCredentials.description")}
+          </p>
+        </label>
+
+        <div class="border-t border-gray-200 dark:border-gray-700" />
+
+        <label class="transition-smooth group flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 p-3 hover:border-brand-500/50 dark:border-gray-700 dark:bg-gray-800/50">
+          <div class="flex flex-col">
+            <span class="transition-smooth text-sm font-medium text-gray-700 group-hover:text-brand-600 dark:text-gray-300 dark:group-hover:text-brand-400">
+              {t("settings.network.disableCooling.label")}
+            </span>
+            <span class="text-xs text-gray-500 dark:text-gray-400">
+              {t("settings.network.disableCooling.description")}
+            </span>
+          </div>
+          <div class="transition-smooth relative inline-flex h-6 w-11 items-center rounded-full focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
+            <input
+              checked={local.config().disableCooling}
+              class="peer sr-only"
+              onChange={(e) => local.handleConfigChange("disableCooling", e.currentTarget.checked)}
+              type="checkbox"
+            />
+            <div class="transition-smooth h-6 w-11 rounded-full bg-gray-200 peer-checked:bg-brand-600 dark:bg-gray-700" />
+            <div class="transition-smooth absolute left-1 h-4 w-4 rounded-full bg-white peer-checked:translate-x-5" />
+          </div>
+        </label>
+
+        <div class="border-t border-gray-200 dark:border-gray-700" />
+
+        <label class="block">
+          <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
             {t("settings.network.routingStrategy.label")}
           </span>
           <select

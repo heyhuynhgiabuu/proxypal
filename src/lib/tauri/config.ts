@@ -26,12 +26,14 @@ export interface AppConfig {
   copilot: CopilotConfig;
   debug: boolean;
   disableControlPanel?: boolean;
+  disableCooling: boolean;
   geminiThinkingInjection?: boolean;
   launchAtLogin: boolean;
   locale?: string;
   loggingToFile: boolean;
   logsMaxTotalSizeMb: number;
   managementKey?: string;
+  maxRetryCredentials: number;
   port: number;
   proxyApiKey?: string;
   proxyPassword?: string;

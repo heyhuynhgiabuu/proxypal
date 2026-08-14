@@ -147,6 +147,7 @@ export const vi = {
       prefixOptional: "Tiền tố (tùy chọn)",
       projectIdOptional: "Project ID (tùy chọn)",
       providerNameRequired: "Tên nhà cung cấp *",
+      requestRetryOptional: "Số lần thử lại (tùy chọn, 0 = không thử lại)",
     },
     location: "Vị trí",
     noApiKeysConfiguredYet: "Chưa cấu hình API key nào",
@@ -169,6 +170,7 @@ export const vi = {
       providerBaseUrl: "https://openrouter.ai/api/v1",
       providerName: "OpenRouter",
       providerPrefix: "vd: openrouter-prod",
+      requestRetry: "e.g. 3 (để trống để dùng cài đặt chung)",
       vertexApiKey: "Dán API key Vertex của bạn...",
       vertexBaseUrl: "https://vertexai.googleapis.com",
       vertexLocation: "us-central1",
@@ -667,10 +669,18 @@ export const vi = {
       },
     },
     network: {
+      disableCooling: {
+        description: "Tắt lịch trình giảm nhiệt xác thực/mô hình sau trạng thái lỗi",
+        label: "Tắt giảm nhiệt",
+      },
       logBufferSize: {
         description:
           "Số mục nhật ký giữ trong bộ nhớ. Giá trị cao hơn sử dụng nhiều bộ nhớ hơn nhưng giữ được nhật ký cũ hơn.",
         label: "Kích thước bộ đệm nhật ký",
+      },
+      maxRetryCredentials: {
+        description: "Số khóa tối đa được thử cho mỗi yêu cầu thất bại (0 = thử tất cả)",
+        label: "Số khóa thử lại tối đa",
       },
       maxRetryInterval: {
         description:

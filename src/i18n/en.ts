@@ -146,6 +146,7 @@ export const en = {
       prefixOptional: "Prefix (optional)",
       projectIdOptional: "Project ID (optional)",
       providerNameRequired: "Provider Name *",
+      requestRetryOptional: "Request Retry (optional, 0 = no retries)",
     },
     location: "Location",
     noApiKeysConfiguredYet: "No API keys configured yet",
@@ -168,6 +169,7 @@ export const en = {
       providerBaseUrl: "https://openrouter.ai/api/v1",
       providerName: "OpenRouter",
       providerPrefix: "e.g. openrouter-prod",
+      requestRetry: "e.g. 3 (leave empty for global setting)",
       vertexApiKey: "Paste your Vertex API key...",
       vertexBaseUrl: "https://vertexai.googleapis.com",
       vertexLocation: "us-central1",
@@ -671,10 +673,18 @@ export const en = {
       },
     },
     network: {
+      disableCooling: {
+        description: "Disable auth/model cooldown scheduling after failure states",
+        label: "Disable Cooling",
+      },
       logBufferSize: {
         description:
           "Number of log entries to retain in memory. Higher values use more memory but preserve older logs.",
         label: "Log Buffer Size",
+      },
+      maxRetryCredentials: {
+        description: "Maximum credentials tried per failed request (0 = try all)",
+        label: "Max Retry Credentials",
       },
       maxRetryInterval: {
         description:

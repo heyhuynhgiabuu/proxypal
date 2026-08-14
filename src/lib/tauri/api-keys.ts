@@ -14,6 +14,7 @@ export interface GeminiApiKey {
   headers?: Record<string, string>;
   prefix?: string;
   proxyUrl?: string;
+  requestRetry?: number;
 }
 
 // Claude API Key structure
@@ -25,6 +26,7 @@ export interface ClaudeApiKey {
   models?: ModelMapping[];
   prefix?: string;
   proxyUrl?: string;
+  requestRetry?: number;
 }
 
 // Codex API Key structure
@@ -34,6 +36,7 @@ export interface CodexApiKey {
   headers?: Record<string, string>;
   prefix?: string;
   proxyUrl?: string;
+  requestRetry?: number;
 }
 
 export interface XaiApiKey {
@@ -42,6 +45,7 @@ export interface XaiApiKey {
   headers?: Record<string, string>;
   prefix?: string;
   proxyUrl?: string;
+  requestRetry?: number;
   websockets?: boolean;
 }
 
@@ -137,6 +141,7 @@ export interface VertexApiKey {
   location?: string;
   prefix?: string;
   projectId?: string;
+  requestRetry?: number;
 }
 
 export async function getVertexApiKeys(): Promise<VertexApiKey[]> {

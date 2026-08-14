@@ -47,7 +47,8 @@ fn convert_api_key_response<T: serde::de::DeserializeOwned>(
         .replace("\"base-url\"", "\"baseUrl\"")
         .replace("\"proxy-url\"", "\"proxyUrl\"")
         .replace("\"excluded-models\"", "\"excludedModels\"")
-        .replace("\"api-key-entries\"", "\"apiKeyEntries\"");
+        .replace("\"api-key-entries\"", "\"apiKeyEntries\"")
+        .replace("\"request-retry\"", "\"requestRetry\"");
     serde_json::from_str(&converted).map_err(|e| e.to_string())
 }
 
@@ -61,7 +62,8 @@ fn convert_to_management_format<T: serde::Serialize>(
         .replace("\"baseUrl\"", "\"base-url\"")
         .replace("\"proxyUrl\"", "\"proxy-url\"")
         .replace("\"excludedModels\"", "\"excluded-models\"")
-        .replace("\"apiKeyEntries\"", "\"api-key-entries\"");
+        .replace("\"apiKeyEntries\"", "\"api-key-entries\"")
+        .replace("\"requestRetry\"", "\"request-retry\"");
     serde_json::from_str(&converted).map_err(|e| e.to_string())
 }
 

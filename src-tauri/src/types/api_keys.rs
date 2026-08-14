@@ -2,10 +2,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 // API Key types matching Management API schema
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GeminiApiKey {
     pub api_key: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_retry: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -18,10 +20,12 @@ pub struct GeminiApiKey {
     pub prefix: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VertexApiKey {
     pub api_key: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_retry: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -41,10 +45,12 @@ pub struct ModelMapping {
     pub alias: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaudeApiKey {
     pub api_key: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_retry: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -59,10 +65,12 @@ pub struct ClaudeApiKey {
     pub prefix: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CodexApiKey {
     pub api_key: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_retry: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -77,6 +85,8 @@ pub struct CodexApiKey {
 #[serde(rename_all = "camelCase")]
 pub struct XaiApiKey {
     pub api_key: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_retry: Option<i32>,
     pub base_url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub proxy_url: Option<String>,

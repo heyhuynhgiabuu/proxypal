@@ -218,6 +218,27 @@ export function VertexKeysTab(props: VertexKeysTabProps) {
               value={newVertexKey().baseUrl || ""}
             />
           </label>
+          <label class="block">
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+              {t("apiKeys.labels.requestRetryOptional")}
+            </span>
+            <input
+              class="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-900"
+              min="0"
+              onInput={(e) =>
+                setNewVertexKey({
+                  ...newVertexKey(),
+                  requestRetry:
+                    e.currentTarget.value === ""
+                      ? undefined
+                      : Math.max(0, Number.parseInt(e.currentTarget.value) || 0),
+                })
+              }
+              placeholder={t("apiKeys.placeholders.requestRetry")}
+              type="number"
+              value={newVertexKey().requestRetry ?? ""}
+            />
+          </label>
           <div class="flex gap-2 pt-2">
             <Button
               disabled={local.loading()}

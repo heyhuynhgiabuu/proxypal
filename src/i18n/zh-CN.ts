@@ -146,6 +146,7 @@ export const zhCN = {
       prefixOptional: "前缀（可选）",
       projectIdOptional: "项目 ID（可选）",
       providerNameRequired: "提供商名称 *",
+      requestRetryOptional: "重试次数（可选，0 = 不重试）",
     },
     location: "位置",
     noApiKeysConfiguredYet: "尚未配置 API 密钥",
@@ -167,6 +168,7 @@ export const zhCN = {
       providerBaseUrl: "https://openrouter.ai/api/v1",
       providerName: "OpenRouter",
       providerPrefix: "例如：openrouter-prod",
+      requestRetry: "e.g. 3（留空使用全局设置）",
       vertexApiKey: "粘贴你的 Vertex API 密钥...",
       vertexBaseUrl: "https://vertexai.googleapis.com",
       vertexLocation: "us-central1",
@@ -662,9 +664,17 @@ export const zhCN = {
       },
     },
     network: {
+      disableCooling: {
+        description: "失败状态后禁用认证/模型冷却调度",
+        label: "禁用冷却",
+      },
       logBufferSize: {
         description: "内存中保留的日志条目数量。数值越高会占用更多内存，但可保留更早日志。",
         label: "日志缓冲区大小",
+      },
+      maxRetryCredentials: {
+        description: "每次失败请求最多尝试的凭据数（0 = 尝试全部）",
+        label: "最大重试凭据数",
       },
       maxRetryInterval: {
         description: "两次重试之间的最大等待时间（0 = 不限制）。实时生效，无需重启。",

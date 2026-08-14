@@ -77,6 +77,10 @@ pub struct AppConfig {
     pub close_to_tray: bool,
     #[serde(default)]
     pub max_retry_interval: i32,
+    #[serde(default)]
+    pub max_retry_credentials: u32,
+    #[serde(default)]
+    pub disable_cooling: bool,
     #[serde(default = "default_proxy_api_key")]
     pub proxy_api_key: String,
     #[serde(default = "default_management_key")]
@@ -183,6 +187,8 @@ impl Default for AppConfig {
             reasoning_effort_level: "medium".to_string(),
             close_to_tray: true,
             max_retry_interval: 0,
+            max_retry_credentials: 0,
+            disable_cooling: false,
             proxy_api_key: "proxypal-local".to_string(),
             management_key: new_management_key(),
             commercial_mode: false,
