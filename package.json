@@ -35,7 +35,7 @@
     "@tauri-apps/plugin-updater": "^2.10.0",
     "chart.js": "^4.5.1",
     "echarts": "^6.0.0",
-    "solid-js": "^1.9.11"
+    "solid-js": "^1.9.14"
   },
   "devDependencies": {
     "@kobalte/tailwindcss": "^0.9.0",
