@@ -415,6 +415,25 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Verify release tag identity before publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_ID: ${{ needs.preflight.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          CURRENT_TAG=$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq '.tag_name')
+          if [ "$CURRENT_TAG" = "$RELEASE_TAG" ]; then
+            echo "Release tag identity verified: $RELEASE_TAG"
+            exit 0
+          fi
+          echo "Release $RELEASE_ID has tag '$CURRENT_TAG', expected '$RELEASE_TAG'; retargeting..."
+          # Fail closed unless the tag ref actually exists (retargeting would otherwise
+          # silently create a tag at the default branch head).
+          gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq '.ref' >/dev/null
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" -f tag_name="$RELEASE_TAG"
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq '"Release now tagged: " + .tag_name'
+
       - name: Publish verified release draft
         env:
           GH_TOKEN: ${{ github.token }}
