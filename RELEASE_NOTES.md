@@ -1,6 +1,21 @@
-# ProxyPal v0.4.50
+# ProxyPal v0.4.51
 
 **Release status:** Pending publication
+
+## CLIProxyAPI v7.2.135
+
+- Updates the pinned mainline sidecar from v7.2.131 to v7.2.135 across local development, CI, and release builds.
+- Includes GPT-5.6 Sol Work Mode model registrations and context-limit updates, `max_completion_tokens` in model definitions, stream error preservation, OpenAI `service_tier` to Claude `speed` mapping, antigravity schema fixes, and a cooling management refactor.
+
+## Release automation
+
+- The publish job now verifies the release's tag identity before publishing and retargets it if GitHub assigned an `untagged-*` ref, failing closed when the tag does not exist. Previous releases (v0.4.45/49/50) shipped untagged and required manual retargeting.
+
+---
+
+# ProxyPal v0.4.50
+
+**Released:** 2026-08-14
 
 ## CLIProxyAPI v7.2.131
 
