@@ -109,4 +109,4 @@ MIT
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=heyhuynhgiabuu/proxypal&type=Date)](https://star-history.com/#heyhuynhgiabuu/proxypal&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=heyhuynhgiabuu/proxypal&type=Date)](https://star-history.dera.page/#heyhuynhgiabuu/proxypal&Date)
