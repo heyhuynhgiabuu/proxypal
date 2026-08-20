@@ -1,6 +1,6 @@
 # ProxyPal v0.4.51
 
-**Release status:** Pending publication
+**Released:** 2026-08-18
 
 ## CLIProxyAPI v7.2.135
 
