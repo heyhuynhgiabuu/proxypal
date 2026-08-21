@@ -1,3 +1,15 @@
+# ProxyPal v0.4.52
+
+**Released:** 2026-08-21
+
+## CLIProxyAPI v7.2.138
+
+- Updates the pinned mainline sidecar from v7.2.135 to v7.2.138 across local development, CI, and release builds.
+- Adds OAuth request-scoped error rules, namespace-aware OpenAI Responses tool resolution for Gemini with custom tool call conversion, and opt-in Codex stream bootstrap buffering with overload failover.
+- Includes upstream fixes for Claude long global cooldowns on Fable-only rate limits, `message.reasoning_content` thinking conversion, Gemini thought-signature preservation/sanitization (including Vertex) and deterministic tool-call IDs, `max_completion_tokens` to Antigravity `maxOutputTokens` mapping, xAI `response.incomplete` terminal handling, base_URL-only credentials with stale auth-header skipping, protocol-aware plugin usage parsing, and warn-level cooldown/upstream diagnostics.
+
+---
+
 # ProxyPal v0.4.51
 
 **Released:** 2026-08-18

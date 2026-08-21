@@ -103,3 +103,14 @@ status: done | updated: 2026-08-10
 
 - [x] Retarget the existing v0.4.49 tag to the verified release commit and trigger GitHub release automation.
 - [x] Verify generated changelog, updater notes, platform assets, and published release state.
+
+### 2026-08-21 - publish ProxyPal v0.4.52 (sidecar 7.2.138)
+status: active | updated: 2026-08-21
+
+- [ ] Pin sidecar 7.2.135 → 7.2.138 (scripts/sidecar-version + ci.yml + release.yml); checksum-verified download, smoke PASS, updater tests green.
+- [ ] Bump app 0.4.51 → 0.4.52 (package.json, Cargo.toml, Cargo.lock, tauri.conf.json); RELEASE_NOTES v0.4.52 section.
+- [ ] Local gates: tsc, lint 0, format, vitest, cargo check/test/fmt.
+- [ ] Commit, push main, annotated tag v0.4.52; verify Gate 0 preflight passes in release workflow.
+
+- Goal: ship sidecar refresh 7.2.138 (OAuth request-scoped error rules, Gemini namespace tool resolution, Codex opt-in stream buffering, xAI/Claude/Gemini/OpenAI fixes) as ProxyPal v0.4.52.
+- Non-goals: no feature work, no AppConfig schema change, no dependency additions.
