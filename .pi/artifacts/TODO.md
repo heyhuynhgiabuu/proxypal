@@ -105,12 +105,13 @@ status: done | updated: 2026-08-10
 - [x] Verify generated changelog, updater notes, platform assets, and published release state.
 
 ### 2026-08-21 - publish ProxyPal v0.4.52 (sidecar 7.2.138)
-status: active | updated: 2026-08-21
+status: done | updated: 2026-08-21
 
-- [ ] Pin sidecar 7.2.135 → 7.2.138 (scripts/sidecar-version + ci.yml + release.yml); checksum-verified download, smoke PASS, updater tests green.
-- [ ] Bump app 0.4.51 → 0.4.52 (package.json, Cargo.toml, Cargo.lock, tauri.conf.json); RELEASE_NOTES v0.4.52 section.
-- [ ] Local gates: tsc, lint 0, format, vitest, cargo check/test/fmt.
-- [ ] Commit, push main, annotated tag v0.4.52; verify Gate 0 preflight passes in release workflow.
+- [x] Pinned sidecar 7.2.135 → 7.2.138; checksum-verified download, smoke PASS (7.2.138/1d5b7612), updater tests 18/18.
+- [x] App 0.4.51 → 0.4.52 in package.json/Cargo.toml/Cargo.lock/tauri.conf.json; RELEASE_NOTES v0.4.52 section.
+- [x] Gates: tsc clean, oxlint 0/0, oxfmt, vitest 11/11, cargo test --lib 57/57, fmt/check clean.
+- [x] Commit dab0fca1 pushed; annotated tag v0.4.52 → dab0fca1. Release workflow 32496290241 success (~40m): preflight pins OK, 4 platform builds, changelog, publish, Discord. Published release correctly tagged v0.4.52 (no untagged-* regression), 16 assets incl. latest.json (version 0.4.52, pub_date 2026-08-21T15:57:38Z); updater asset URL resolves (302).
+- Manual gates outstanding per runbook: Gate 1 clean-install launch per OS, Gate 3 provider OAuth smoke.
 
 - Goal: ship sidecar refresh 7.2.138 (OAuth request-scoped error rules, Gemini namespace tool resolution, Codex opt-in stream buffering, xAI/Claude/Gemini/OpenAI fixes) as ProxyPal v0.4.52.
 - Non-goals: no feature work, no AppConfig schema change, no dependency additions.
