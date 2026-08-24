@@ -1017,6 +1017,123 @@ mod tests {
         );
     }
 
+    /// End-to-end check against the real CLIProxyAPI binary: the generated YAML
+    /// must be accepted by the sidecar when requests are signed with the key
+    /// this process reports, and must keep working across a sidecar restart.
+    ///
+    /// Ignored by default because it needs the sidecar binary, which CI does not
+    /// download for the `check` job (`PROXYPAL_SKIP_SIDECAR=1`). Run locally:
+    ///   cargo test --lib generated_yaml_is_accepted -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn generated_yaml_is_accepted_by_the_real_sidecar_across_restart() {
+        let sidecar = std::env::var("CLI_PROXY_API_BIN")
+            .unwrap_or_else(|_| "/usr/bin/cli-proxy-api".to_string());
+        assert!(
+            std::path::Path::new(&sidecar).exists(),
+            "sidecar not found at {sidecar}; set CLI_PROXY_API_BIN"
+        );
+
+        let root = std::env::temp_dir().join(format!("proxypal-e2e-{}", uuid::Uuid::new_v4()));
+        let auth_dir = root.join("auth");
+        std::fs::create_dir_all(&auth_dir).unwrap();
+
+        let key = crate::get_management_key();
+        let config = crate::config::AppConfig {
+            port: 18317,
+            management_key: key.clone(),
+            ..crate::config::AppConfig::default()
+        };
+        let yaml = build_proxy_config_yaml(&config, &root, &auth_dir, "").unwrap();
+        let yaml_path = root.join("proxy-config.yaml");
+        std::fs::write(&yaml_path, &yaml).unwrap();
+
+        let endpoints = [
+            "config.yaml",
+            "auth-files",
+            "gemini-api-key",
+            "claude-api-key",
+            "usage-queue?count=10",
+            "anthropic-auth-url?is_webui=true",
+            "config.yaml",
+            "auth-files",
+        ];
+
+        for round in ["first start", "after restart"] {
+            let mut child = std::process::Command::new(&sidecar)
+                .args(["-config", yaml_path.to_str().unwrap(), "-local-model"])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .expect("failed to spawn sidecar");
+
+            let client = reqwest::blocking::Client::builder()
+                .no_proxy()
+                .timeout(std::time::Duration::from_secs(10))
+                .build()
+                .unwrap();
+            let base = "http://127.0.0.1:18317/v0/management";
+
+            // Wait for the listener.
+            let mut up = false;
+            for _ in 0..40 {
+                if client
+                    .get(format!("{base}/config.yaml"))
+                    .header("X-Management-Key", &key)
+                    .send()
+                    .is_ok()
+                {
+                    up = true;
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(250));
+            }
+            assert!(up, "sidecar did not come up ({round})");
+
+            // Repeated calls: a mismatched key 401s and is banned after five tries,
+            // so anything other than an unbroken run of 200s fails here.
+            for ep in endpoints {
+                let status = client
+                    .get(format!("{base}/{ep}"))
+                    .header("X-Management-Key", &key)
+                    .send()
+                    .unwrap()
+                    .status();
+                assert_eq!(status.as_u16(), 200, "{ep} returned {status} ({round})");
+            }
+
+            let _ = child.kill();
+            let _ = child.wait();
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn generated_yaml_secret_key_matches_the_management_request_key() {
+        // The defect this guards: the sidecar is configured with one key while
+        // requests are signed with another, so every management call 401s and the
+        // caller is banned after five tries.
+        let config = crate::config::AppConfig {
+            management_key: crate::config::management_key(),
+            ..crate::config::AppConfig::default()
+        };
+        let config_dir = std::path::PathBuf::from("/tmp/proxypal-test-key-match");
+        let auth_dir = std::path::PathBuf::from("/tmp/.cli-proxy-api-test");
+
+        let yaml = build_proxy_config_yaml(&config, &config_dir, &auth_dir, "").unwrap();
+
+        let header_key = crate::get_management_key();
+        assert!(
+            yaml.contains(&format!("secret-key: \"{}\"", header_key)),
+            "generated YAML secret-key must equal the X-Management-Key value.\n\
+             header key: {}\nyaml:\n{}",
+            header_key,
+            yaml
+        );
+    }
+
     #[test]
     fn build_proxy_config_yaml_sets_safe_defaults() {
         let config = crate::config::AppConfig::default();
