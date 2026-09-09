@@ -23,9 +23,15 @@ use tauri::{
     Emitter, Manager,
 };
 
-/// Get management key from config (used for internal proxy API calls)
+/// Get management key for internal proxy API calls.
+///
+/// Reads the process-wide key rather than re-deriving it from `config.json` per
+/// request: every fallback in `load_config` can mint a fresh `Uuid`, so a disk
+/// read here could return a different key on each call and never match the
+/// `remote-management.secret-key` the sidecar was started with. This is also
+/// called from detached threads (the usage collector) that have no `AppState`.
 pub(crate) fn get_management_key() -> String {
-    load_config().management_key
+    crate::config::management_key()
 }
 
 // Windows-specific imports for hiding CMD windows

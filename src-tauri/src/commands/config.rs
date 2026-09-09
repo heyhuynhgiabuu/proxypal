@@ -30,7 +30,12 @@ pub fn get_config(state: State<AppState>) -> AppConfig {
 }
 
 #[tauri::command]
-pub fn save_config(state: State<AppState>, config: AppConfig) -> Result<(), String> {
+pub fn save_config(state: State<AppState>, mut config: AppConfig) -> Result<(), String> {
+    // Keep the key the app signs with in step with what lands in the generated
+    // YAML; otherwise a key edited in Settings restarts the sidecar with a value
+    // the request headers never adopt (issue #89).
+    crate::config::reconcile_management_key(&mut config);
+
     // Debug: Log provider models before save
     eprintln!(
         "[ProxyPal Debug] Saving {} custom providers",
