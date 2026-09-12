@@ -84,7 +84,7 @@ fn build_proxy_config_yaml(
 
     let mut proxy_config = format!(
         r#"# ProxyPal generated config
-host: "127.0.0.1"
+host: "0.0.0.0"
 port: {}
 auth-dir: "{}"
 api-keys:
@@ -1037,8 +1037,8 @@ mod tests {
             yaml
         );
         assert!(
-            yaml.contains("host: \"127.0.0.1\""),
-            "Expected host: \"127.0.0.1\", got:\n{}",
+            yaml.contains("host: \"0.0.0.0\""),
+            "Expected host: \"0.0.0.0\", got:\n{}",
             yaml
         );
     }
